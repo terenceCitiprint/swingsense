@@ -1,0 +1,49 @@
+# Coaching frameworks & cues the engine can cite when making suggestions.
+# SEED CONTENT — intentionally general and source-neutral. Replace these with
+# the specific coaches/philosophies YOU trust so suggestions sound like your
+# game, not generic advice. Each entry: id, name, summary, details, source, tags.
+
+entries:
+  - id: feel_vs_real
+    name: Feel ain't real
+    summary: >
+      A player's felt sensation often differs from measured reality; cues are
+      tools to produce a change, not literal descriptions of mechanics.
+    details: >
+      Treat every feel as a hypothesis to test against measured data. The same
+      mechanical fault can require opposite feels for two different players.
+    source: Widely-held coaching principle
+    tags: [feel, cue, philosophy]
+
+  - id: sequencing_drills
+    name: Sequencing / transition drills
+    summary: >
+      Drills that train pelvis-leads-the-downswing to restore proximal-to-distal
+      order (e.g. pump drills, step-through drills, pause-at-top).
+    details: >
+      Used when measured/observed sequence shows arms or thorax firing before the
+      pelvis, or when the player feels "rushed from the top".
+    source: General coaching toolkit
+    tags: [sequence, transition, drill]
+
+  - id: low_point_control
+    name: Low-point and strike control
+    summary: >
+      Cues and drills (towel/line drills, lead-side pressure) to move the swing's
+      low point forward for ball-then-turf contact.
+    details: >
+      Relevant when a player feels they must "help the ball up" or "scoop",
+      which usually correlates with an early release and a rearward low point.
+    source: General coaching toolkit
+    tags: [strike, low-point, release, contact]
+
+  - id: face_path_matching
+    name: Face-to-path / curvature management
+    summary: >
+      Frameworks for matching clubface to path to control start line and curve;
+      feel cues for the trail hand / lead wrist to influence face.
+    details: >
+      Useful when the player describes shot-shape problems (slice/hook/two-way
+      miss) in feel terms; cross-reference felt face against wrist condition.
+    source: General coaching toolkit (ball-flight laws)
+    tags: [face, path, ball-flight, curve]
