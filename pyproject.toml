@@ -21,6 +21,7 @@ vision = [
     "numpy>=1.26",
     "opencv-python>=4.9",
     "mediapipe>=0.10.14",
+    "plotly>=5.20",
 ]
 
 [project.scripts]

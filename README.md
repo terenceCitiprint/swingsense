@@ -15,6 +15,12 @@ drills to test.
 - **Phase 1 — video pose extraction (done):** single-camera 2D pose via
   MediaPipe → swing events (address/top/impact) + biomechanics proxies (tempo,
   hip-shoulder separation, head movement) with honest confidence gating.
+- **Phase 2 — visual report (done):** `--report out.html` writes a two-tier
+  HTML report: plain-language read up top ("the read"), visuals below ("for
+  nerds") — a panoramic strip of velocity-colored skeletons with the hand-path
+  arc, the kinematic-sequence chart (who fires when), hand-speed profile,
+  hip–shoulder separation curve, and an interactive 3D loop of the transition
+  window you can rotate and scrub.
 - **Future:** club tracking, multi-swing trends, quantitative double-pendulum
   simulation.
 
@@ -35,6 +41,11 @@ swingsense feel "felt like I was hanging back and flipping at it" --club 7i
 
 # Analyze a swing video (optionally with the feel)
 swingsense analyze swing.mp4 --feel "felt smooth but the ball went right" -c driver
+
+# Full visual report (panorama, sequence chart, 3D loop) — works with or
+# without the LLM step
+swingsense analyze swing.mp4 --report report.html
+swingsense analyze swing.mp4 --features-only --report report.html  # no API cost
 
 # Just the measurements, no LLM call
 swingsense analyze swing.mp4 --features-only

@@ -70,6 +70,10 @@ def analyze(
     features_only: bool = typer.Option(
         False, "--features-only", help="Extract video features; skip the LLM."
     ),
+    report: str | None = typer.Option(
+        None, "--report", "-r",
+        help="Also write a visual HTML report (panorama, charts, 3D loop) here.",
+    ),
 ):
     """Extract biomechanics from a swing video and reason over them with your feel."""
     path = Path(video).expanduser()
@@ -93,7 +97,17 @@ def analyze(
 
     render_features(feats)
 
+    def _write_report(analysis_dict: dict | None) -> None:
+        if not report:
+            return
+        from .report import build_report
+
+        with console.status("Rendering visual report ..."):
+            out = build_report(track, feats, analysis_dict, str(path), report)
+        console.print(f"[green]Report written:[/green] {out}")
+
     if features_only:
+        _write_report(None)
         return
 
     kb = load_knowledge()
@@ -105,6 +119,7 @@ def analyze(
     except EngineError as exc:
         console.print(f"\n[yellow]Skipping reasoning step:[/yellow] {exc}")
         console.print("[dim]Measured features above are still valid.[/dim]")
+        _write_report(None)
         raise typer.Exit(code=1)
 
     analysis["_features"] = feats  # persist measurements alongside the reasoning
@@ -118,6 +133,7 @@ def analyze(
     console.print()
     render_analysis(analysis, swing_id=swing_id)
     console.print(f"\n[dim]Saved as swing #{swing_id}.[/dim]")
+    _write_report(analysis)
 
 
 @app.command()
