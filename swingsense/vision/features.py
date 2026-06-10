@@ -65,8 +65,12 @@ def _window_visibility(track: PoseTrack, lo: int, hi: int, joints: list[int]) ->
 def _smooth(x: np.ndarray, k: int = 5) -> np.ndarray:
     if len(x) < k:
         return x
-    kernel = np.ones(k) / k
-    return np.convolve(x, kernel, mode="same")
+    # Pad with edge values (not zeros) so the moving average isn't dragged toward
+    # 0 at the boundaries — that boundary bias could otherwise pull the detected
+    # top-of-swing onto the final frame.
+    pad = k // 2
+    xp = np.pad(x, pad, mode="edge")
+    return np.convolve(xp, np.ones(k) / k, mode="valid")
 
 
 def detect_events(track: PoseTrack) -> dict:
@@ -197,12 +201,23 @@ def compute_features(track: PoseTrack) -> SwingFeatures:
     metrics["hand_visibility"] = round(hand_vis, 2)
     metrics["core_visibility"] = round(core_vis, 2)
 
-    # A real backswing takes time; if address and top collapse together the
-    # event detector failed (usually because the hands vanished during the
-    # upswing), no matter how it scored on raw visibility.
+    # Did the hands actually come back DOWN after the top? Compare how far they
+    # rose in the backswing to how far they descended into the detected impact.
+    # This is the robust test for "is there a real downswing in this clip?" — it
+    # catches both clips cut off at the top and tops mis-located by occlusion,
+    # independent of exactly which frame `top` landed on.
+    y = _smooth(wrist[:, 1])  # vertical hand path (same signal detect_events uses)
+    rise = float(y[a] - y[top])  # positive: hands went up
+    drop = float(y[imp] - y[top])  # positive: hands came back down
+    descends = rise > 0.05 and drop >= 0.4 * rise
+    downswing_captured = descends and downswing_f >= 5
+    metrics["tempo"]["downswing_captured"] = downswing_captured
+
+    # A real backswing takes time; a near-zero backswing means the top could not
+    # be located at all (e.g. hands lost on the way up).
     backswing_implausible = backswing_f < 4
 
-    # --- Overall confidence: gated on hand tracking AND event plausibility. ---
+    # --- Confidence: gated on framing, completeness, and plausibility. ---
     if hand_vis < 0.3 or backswing_implausible:
         confidence = "low"
         events["reliable"] = False
@@ -210,7 +225,7 @@ def compute_features(track: PoseTrack) -> SwingFeatures:
             notes.append(
                 f"Backswing resolved to only {backswing_f} frame(s) — the "
                 "top-of-swing could not be located (hands likely lost during "
-                "the upswing). Tempo and event timing are UNRELIABLE here."
+                "the upswing). Event timing is UNRELIABLE here."
             )
         if hand_vis < 0.3:
             notes.append(
@@ -218,7 +233,20 @@ def compute_features(track: PoseTrack) -> SwingFeatures:
                 "Reframe so the body fills more of the frame, against a plain "
                 "background, ideally at 120-240fps."
             )
-    elif hand_vis < 0.6 or core_vis < 0.6 or downswing_f < 5:
+    elif not downswing_captured:
+        # Backswing/top are usable, but there is no measurable downswing.
+        confidence = "low"
+        events["reliable"] = False
+        events["captured"] = "backswing_only"
+        notes.append(
+            "No full downswing was captured — the clip appears to stop at/near "
+            "the top of the backswing (the hands never descend back through the "
+            "ball). Backswing and top position are usable, but tempo and impact "
+            "cannot be measured. Record through to a full finish."
+        )
+    elif hand_vis < 0.75 or core_vis < 0.8 or not metrics["tempo"]["reliable"]:
+        # Downswing is captured, but hand tracking is only fair or the tempo
+        # sits at the edge of plausibility — usable, not lab-grade.
         confidence = "medium"
         events["reliable"] = True
     else:
