@@ -19,8 +19,11 @@ drills to test.
   HTML report: plain-language read up top ("the read"), visuals below ("for
   nerds") — a panoramic strip of velocity-colored skeletons with the hand-path
   arc, the kinematic-sequence chart (who fires when), hand-speed profile,
-  hip–shoulder separation curve, and an interactive 3D loop of the transition
-  window you can rotate and scrub.
+  hip–shoulder separation curve, and an interactive full-swing 3D loop you can
+  rotate and scrub: a rendered body silhouette (not bare sticks) with labeled
+  joint groups, the hand path traced by phase, and the fitted downswing plane
+  shown as a translucent surface with tilt / tightness / backswing-vs-downswing
+  plane metrics. Hand path, not club path — the club is not tracked.
 - **Phase 3 — corrective & longitudinal visuals (done):** the 3D loop gains a
   **ghost skeleton** — your own recorded motion re-timed so the pelvis leads
   (never invented positions, just fixed timing) — shown beside the actual swing.

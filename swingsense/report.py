@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .loop3d import build_loop_fig
 from .vision.kinematics import Kinematics, separation_series, sequence_read
 from .vision.pose import PoseTrack
 
@@ -137,131 +138,6 @@ def _separation_fig(track: PoseTrack, kin: Kinematics, events: dict):
     return fig
 
 
-_JOINT_GROUPS = [
-    # (legend label, landmark indices, marker color, size)
-    ("Head", [0], "#FF8A3D", 11),
-    ("Upper torso", [11, 12, 13, 14, 15, 16], "#E8590C", 7),
-    ("Pelvis", [23, 24], "#D9500B", 8),
-    ("Stance", [25, 26, 27, 28], "#C2470A", 7),
-]
-_BONE = "#C9B18C"   # tan skeleton lines, as in mocap-style overlays
-_GHOST = "#8C949B"
-
-
-def _loop3d_fig(track: PoseTrack, events: dict, window_s: float = 1.0,
-                ghost=None):
-    """Interactive 3D skeleton animation around the transition (top of swing).
-
-    Styled like a mocap overlay: tan bones, orange joints with white rings,
-    joint groups labeled in the legend (Head / Upper torso / Pelvis / Stance),
-    on a dark scene with the hand path traced through the window. If `ghost`
-    (a correction.Ghost with changed=True) is given, a grey skeleton shows the
-    re-timed corrected motion at the same instant.
-    """
-    import plotly.graph_objects as go
-
-    top = events["top"]["frame"]
-    imp = events["impact"]["frame"]
-    fps = track.fps
-    lo = max(0, top - int(fps * window_s * 0.6))
-    hi = min(track.n_frames - 1, max(imp, top + int(fps * window_s * 0.6)))
-    step = max(1, (hi - lo) // 40)  # cap ~40 animation frames
-    idxs = list(range(lo, hi + 1, step))
-
-    def xyz(lm, i):
-        return lm[i, 0], lm[i, 2], 1 - lm[i, 1]  # depth on Y, image-y flipped up
-
-    def bones_trace(lm, color, width, name=None, dash=None):
-        xs, ys, zs = [], [], []
-        for a, b in _CONNECTIONS:
-            pa, pb = xyz(lm, a), xyz(lm, b)
-            xs += [pa[0], pb[0], None]
-            ys += [pa[1], pb[1], None]
-            zs += [pa[2], pb[2], None]
-        line = dict(color=color, width=width)
-        if dash:
-            line["dash"] = dash
-        return go.Scatter3d(x=xs, y=ys, z=zs, mode="lines", line=line,
-                            name=name, showlegend=bool(name),
-                            hoverinfo="skip")
-
-    def joints_traces(lm):
-        out = []
-        for label, joints, color, size in _JOINT_GROUPS:
-            pts = [xyz(lm, j) for j in joints]
-            out.append(go.Scatter3d(
-                x=[p[0] for p in pts], y=[p[1] for p in pts],
-                z=[p[2] for p in pts], mode="markers", name=label,
-                marker=dict(size=size, color=color,
-                            line=dict(color="#F2F2F2", width=2)),
-            ))
-        return out
-
-    show_ghost = ghost is not None and getattr(ghost, "changed", False)
-
-    def frame_data(fi):
-        data = [bones_trace(track.landmarks[fi], _BONE, 8)]
-        data += joints_traces(track.landmarks[fi])
-        if show_ghost:
-            data.append(bones_trace(ghost.landmarks[fi], _GHOST, 5,
-                                    name="ghost (re-timed)", dash="dot"))
-        return data
-
-    frames = [go.Frame(data=frame_data(fi), name=f"{fi / fps:.2f}s")
-              for fi in idxs]
-
-    # Static hand path through the window — appended AFTER the animated traces
-    # so frame updates (which replace traces by index) never touch it.
-    wrist = (track.landmarks[lo:hi + 1, 15, :] +
-             track.landmarks[lo:hi + 1, 16, :]) / 2.0
-    path_trace = go.Scatter3d(
-        x=wrist[:, 0], y=wrist[:, 2], z=1 - wrist[:, 1], mode="lines",
-        line=dict(color="#FFC845", width=4), name="hand path",
-        opacity=0.65,
-    )
-
-    title = ("3D loop — transition window (rotate me; depth is MediaPipe's "
-             "estimate, illustrative not measured)")
-    if show_ghost:
-        title = ("3D loop — joints labeled; grey ghost = your motion re-timed "
-                 "to fire in order. Depth illustrative.")
-    fig = go.Figure(data=frame_data(idxs[0]) + [path_trace], frames=frames)
-    fig.update_layout(
-        title=dict(text=title, font=dict(color="#E8E8E4", size=15)),
-        paper_bgcolor="#10150F",
-        legend=dict(font=dict(color="#D8DCD4"), orientation="h", y=0.02,
-                    bgcolor="rgba(0,0,0,0)"),
-        scene=dict(
-            xaxis=dict(visible=False), yaxis=dict(visible=False),
-            zaxis=dict(visible=False), aspectmode="data",
-            bgcolor="#10150F",
-            camera=dict(eye=dict(x=0.0, y=-2.2, z=0.15)),  # face-on default
-        ),
-        height=560, margin=dict(t=70, b=10),
-        updatemenus=[dict(
-            type="buttons", showactive=False, y=0, x=0,
-            font=dict(color="#14211A"), bgcolor="#E8E8E4",
-            buttons=[
-                dict(label="▶ play", method="animate",
-                     args=[None, dict(frame=dict(duration=70, redraw=True),
-                                      fromcurrent=True)]),
-                dict(label="⏸ pause", method="animate",
-                     args=[[None], dict(mode="immediate",
-                                        frame=dict(duration=0, redraw=False))]),
-            ],
-        )],
-        sliders=[dict(
-            font=dict(color="#D8DCD4"),
-            steps=[dict(method="animate", label=f.name,
-                        args=[[f.name], dict(mode="immediate",
-                                             frame=dict(duration=0, redraw=True))])
-                   for f in frames],
-            y=-0.02, len=0.9,
-        )],
-    )
-    return fig
-
-
 # --------------------------------------------------------------------------- #
 # Report assembly
 # --------------------------------------------------------------------------- #
@@ -330,6 +206,8 @@ def build_report(
     events = features["events"]
     seq = sequence_read(kin, events["top"]["frame"], events["impact"]["frame"])
     ghost = build_ghost(track, kin, events)
+    from .vision.path import analyze_path
+    path_info = analyze_path(track, events)
     try:
         from .pro import norms_assessment
         norms = norms_assessment(features, kin, events)
@@ -344,7 +222,7 @@ def build_report(
         _sequence_fig(kin, events),
         _hand_speed_fig(kin, events),
         _separation_fig(track, kin, events),
-        _loop3d_fig(track, events, ghost=ghost),
+        build_loop_fig(track, events, ghost=ghost, path=path_info),
     ]
     charts = [
         f.to_html(full_html=False, include_plotlyjs=("cdn" if i == 0 else False))
@@ -359,6 +237,27 @@ def build_report(
     badge_txt = (f"confidence: {conf} · events reliable" if reliable
                  else f"confidence: {conf} · events unreliable — treat visuals "
                       "as illustrative")
+
+    plane = path_info.get("plane")
+    if plane:
+        rows = [f"<li>Downswing plane tilt: <strong>{plane['tilt_deg']}°"
+                f"</strong> from horizontal (steeper = more upright path)</li>",
+                f"<li>Path tightness: hands stay within "
+                f"<strong>{plane['rms_offplane_pct']}%</strong> of frame "
+                f"height from the fitted plane (lower = more planar)</li>"]
+        if plane.get("back_vs_down_deg") is not None:
+            rows.append(f"<li>Backswing vs downswing plane: "
+                        f"<strong>{plane['back_vs_down_deg']}°</strong> apart "
+                        f"(big gaps suggest a loop or re-route in transition)"
+                        f"</li>")
+        notes_li = "".join(f"<li>{_esc(n)}</li>" for n in path_info["notes"])
+        path_html = (f"<div class='block'><h3>Path analysis (hand path)</h3>"
+                     f"<ul>{''.join(rows)}</ul>"
+                     f"<ul class='caveats'>{notes_li}</ul></div>")
+    else:
+        path_html = ("<div class='block caveats'><h3>Path analysis</h3>"
+                     "<p>Downswing too short to fit a plane on this clip.</p>"
+                     "</div>")
 
     doc = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
@@ -433,6 +332,7 @@ def build_report(
   <div class="chart">{charts[3]}
     <p class="caveats" style="padding:0 12px">{_esc(ghost.description)}</p>
   </div>
+  {path_html}
   <div class="block caveats"><h3>Measurement caveats</h3>
     <ul>{notes_html or "<li>None recorded.</li>"}</ul>
     <p>All numbers are single-camera 2D proxies. Timing and shape are

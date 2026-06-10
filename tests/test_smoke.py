@@ -218,3 +218,40 @@ def test_restyled_3d_loop_markers(tmp_path, bad):
     doc = (tmp_path / "r.html").read_text()
     for label in ("Head", "Upper torso", "Pelvis", "Stance", "hand path"):
         assert label in doc, f"missing joint-group label: {label}"
+
+
+def test_path_analysis(bad):
+    from swingsense.vision.path import analyze_path
+
+    track, feats = bad
+    pa = analyze_path(track, feats["events"])
+    plane = pa["plane"]
+    assert plane is not None
+    assert 0 <= plane["tilt_deg"] <= 90
+    assert plane["rms_offplane_pct"] >= 0
+    assert len(pa["down_pts"]) >= 4
+    assert any("not club path" in n for n in pa["notes"])
+
+
+def test_body_mesh_valid(good):
+    from swingsense.loop3d import _to_xyz
+    from swingsense.vision.bodymesh import body_mesh_xyz
+
+    track, _ = good
+    verts, tris = body_mesh_xyz(_to_xyz(track.landmarks[20]))
+    assert verts.ndim == 2 and verts.shape[1] == 3
+    assert tris.ndim == 2 and tris.shape[1] == 3
+    assert tris.max() < len(verts) and tris.min() >= 0
+    assert np.isfinite(verts).all()
+
+
+def test_full_swing_loop_in_report(tmp_path, bad):
+    from swingsense.report import build_report
+
+    track, feats = bad
+    video = write_video(track, str(tmp_path / "swing.mp4"))
+    build_report(track, feats, None, video, str(tmp_path / "r.html"))
+    doc = (tmp_path / "r.html").read_text()
+    for m in ("mesh3d", "downswing plane (fit)", "Path analysis",
+              "full swing", "hand path"):
+        assert m.lower() in doc.lower(), f"missing: {m}"
