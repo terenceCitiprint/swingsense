@@ -137,8 +137,13 @@ def _separation_fig(track: PoseTrack, kin: Kinematics, events: dict):
     return fig
 
 
-def _loop3d_fig(track: PoseTrack, events: dict, window_s: float = 1.0):
-    """Interactive 3D skeleton animation around the transition (top of swing)."""
+def _loop3d_fig(track: PoseTrack, events: dict, window_s: float = 1.0,
+                ghost=None):
+    """Interactive 3D skeleton animation around the transition (top of swing).
+
+    If `ghost` (a correction.Ghost with changed=True) is given, a second
+    grey skeleton shows the re-timed corrected motion at the same instant.
+    """
     import plotly.graph_objects as go
 
     top = events["top"]["frame"]
@@ -149,23 +154,37 @@ def _loop3d_fig(track: PoseTrack, events: dict, window_s: float = 1.0):
     step = max(1, (hi - lo) // 40)  # cap ~40 animation frames
     idxs = list(range(lo, hi + 1, step))
 
-    def frame_traces(fi):
-        lm = track.landmarks[fi]
+    def skel_trace(lm_frame, color, width, name, dash=None):
         xs, ys, zs = [], [], []
         for a, b in _CONNECTIONS:
-            xs += [lm[a, 0], lm[b, 0], None]
-            ys += [lm[a, 2], lm[b, 2], None]          # depth on Y for a floor view
-            zs += [1 - lm[a, 1], 1 - lm[b, 1], None]  # flip image-y to "up"
-        return go.Scatter3d(x=xs, y=ys, z=zs, mode="lines",
-                            line=dict(color="#2E6B46", width=7),
-                            showlegend=False)
+            xs += [lm_frame[a, 0], lm_frame[b, 0], None]
+            ys += [lm_frame[a, 2], lm_frame[b, 2], None]          # depth
+            zs += [1 - lm_frame[a, 1], 1 - lm_frame[b, 1], None]  # flip y to up
+        line = dict(color=color, width=width)
+        if dash:
+            line["dash"] = dash
+        return go.Scatter3d(x=xs, y=ys, z=zs, mode="lines", line=line,
+                            name=name, showlegend=(name is not None))
 
-    frames = [go.Frame(data=[frame_traces(fi)],
-                       name=f"{fi / fps:.2f}s") for fi in idxs]
-    fig = go.Figure(data=[frame_traces(idxs[0])], frames=frames)
+    show_ghost = ghost is not None and getattr(ghost, "changed", False)
+
+    def frame_data(fi):
+        data = [skel_trace(track.landmarks[fi], "#2E6B46", 7, "actual")]
+        if show_ghost:
+            data.append(skel_trace(ghost.landmarks[fi], "#9AA39B", 5,
+                                   "ghost (re-timed)", dash="dot"))
+        return data
+
+    frames = [go.Frame(data=frame_data(fi), name=f"{fi / fps:.2f}s")
+              for fi in idxs]
+    title = ("3D loop — transition window (rotate me; depth is MediaPipe's "
+             "estimate, illustrative not measured)")
+    if show_ghost:
+        title = ("3D loop — actual (green) vs ghost (grey, your motion "
+                 "re-timed to fire in order)")
+    fig = go.Figure(data=frame_data(idxs[0]), frames=frames)
     fig.update_layout(
-        title="3D loop — transition window (rotate me; depth is MediaPipe's "
-              "estimate, illustrative not measured)",
+        title=title,
         scene=dict(
             xaxis=dict(visible=False), yaxis=dict(visible=False),
             zaxis=dict(visible=False), aspectmode="data",
@@ -247,12 +266,14 @@ def build_report(
     panorama_path: str | None = None,
 ) -> str:
     """Write the HTML report; returns out_path."""
+    from .vision.correction import build_ghost
     from .vision.kinematics import compute_kinematics
     from .vision.visuals import panorama_strip
 
     kin = compute_kinematics(track)
     events = features["events"]
     seq = sequence_read(kin, events["top"]["frame"], events["impact"]["frame"])
+    ghost = build_ghost(track, kin, events)
 
     pano = panorama_path or str(Path(out_path).with_suffix(".panorama.png"))
     panorama_strip(track, video_path, events, kin, pano)
@@ -262,7 +283,7 @@ def build_report(
         _sequence_fig(kin, events),
         _hand_speed_fig(kin, events),
         _separation_fig(track, kin, events),
-        _loop3d_fig(track, events),
+        _loop3d_fig(track, events, ghost=ghost),
     ]
     charts = [
         f.to_html(full_html=False, include_plotlyjs=("cdn" if i == 0 else False))
@@ -348,7 +369,9 @@ def build_report(
   <div class="chart">{charts[0]}</div>
   <div class="chart">{charts[1]}</div>
   <div class="chart">{charts[2]}</div>
-  <div class="chart">{charts[3]}</div>
+  <div class="chart">{charts[3]}
+    <p class="caveats" style="padding:0 12px">{_esc(ghost.description)}</p>
+  </div>
   <div class="block caveats"><h3>Measurement caveats</h3>
     <ul>{notes_html or "<li>None recorded.</li>"}</ul>
     <p>All numbers are single-camera 2D proxies. Timing and shape are

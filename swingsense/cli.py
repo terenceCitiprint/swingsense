@@ -107,6 +107,14 @@ def analyze(
         console.print(f"[green]Report written:[/green] {out}")
 
     if features_only:
+        swing_id = db.add_swing(
+            feel=feel or "(video only)",
+            analysis={"_features": feats},
+            club=club,
+            video_path=str(path),
+            tags=list(tag),
+        )
+        console.print(f"[dim]Saved measurements as swing #{swing_id}.[/dim]")
         _write_report(None)
         return
 
@@ -197,6 +205,64 @@ def kb():
     for e in entries:
         t.add_row(e.category, e.name, e.summary.strip(), e.source)
     console.print(t)
+
+
+@app.command()
+def compare(
+    video_a: str = typer.Argument(..., help="First swing video (the 'before')."),
+    video_b: str = typer.Argument(..., help="Second swing video (the 'after')."),
+    out: str = typer.Option("compare.html", "--out", "-o", help="Report path."),
+    label_a: str = typer.Option("before", help="Label for the first swing."),
+    label_b: str = typer.Option("after", help="Label for the second swing."),
+    model: str = typer.Option("full", "--model", help="Pose model variant."),
+):
+    """Compare two swings: time-aligned overlay, metric deltas, panoramas."""
+    paths = [Path(video_a).expanduser(), Path(video_b).expanduser()]
+    for p in paths:
+        if not p.exists():
+            console.print(f"[red]No such video:[/red] {p}")
+            raise typer.Exit(code=1)
+    try:
+        from .vision.features import compute_features
+        from .vision.pose import extract_pose
+    except ImportError as exc:
+        console.print(f"[red]Video support needs extra deps:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    tracks, feats = [], []
+    for p in paths:
+        with console.status(f"Extracting pose from {p.name} ..."):
+            t = extract_pose(str(p), model_variant=model)
+            tracks.append(t)
+            feats.append(compute_features(t).to_dict())
+
+    from .compare import build_comparison
+
+    with console.status("Rendering comparison ..."):
+        result = build_comparison(
+            tracks[0], feats[0], str(paths[0]),
+            tracks[1], feats[1], str(paths[1]),
+            out, labelA=label_a, labelB=label_b,
+        )
+    console.print(f"[green]Comparison written:[/green] {result}")
+
+
+@app.command()
+def trends(
+    out: str = typer.Option("trends.html", "--out", "-o", help="Report path."),
+    last: int = typer.Option(100, "--last", "-n", help="How many swings back."),
+    club: str | None = typer.Option(None, "--club", "-c", help="Filter by club."),
+):
+    """Chart tempo and separation across your logged video swings."""
+    from .trends import build_trends
+
+    result = build_trends(out, limit=last, club=club)
+    if result is None:
+        console.print(
+            "[yellow]No video swings with measurements in history yet. "
+            "Run: swingsense analyze <video> first.[/yellow]")
+        raise typer.Exit(code=1)
+    console.print(f"[green]Trends written:[/green] {result}")
 
 
 @app.command()
