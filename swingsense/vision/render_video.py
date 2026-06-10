@@ -105,6 +105,92 @@ def _text(frame, s, org, scale, color=_HUD_TEXT, weight=1):
                 weight, cv2.LINE_AA)
 
 
+# Guide-line palette (BGR)
+_GUIDE_GREEN = (110, 200, 90)    # balance lines
+_GUIDE_CYAN = (230, 220, 60)     # head circle / live spine
+_GUIDE_YELLOW = (60, 220, 250)   # setup triangle / address posture line
+_GUIDE_WARN = (40, 120, 255)     # circle turns amber when head leaves it
+
+
+def detect_view(track: PoseTrack, frame_idx: int) -> str:
+    """'faceon' or 'dtl' from apparent shoulder span at address."""
+    lm = track.landmarks[frame_idx]
+    return "faceon" if abs(lm[11, 0] - lm[12, 0]) > 0.10 else "dtl"
+
+
+class Guides:
+    """Coaching guide geometry, frozen at address, drawn live every frame.
+
+    Face-on: green vertical balance lines at the ankles (sway check), cyan
+    head-stability circle, yellow live setup triangle (shoulders + hands).
+    Down-the-line: yellow address posture line (hip through shoulder) held
+    for the whole swing vs the cyan live spine line — drifting apart is the
+    classic early-extension / standing-up read.
+    """
+
+    def __init__(self, track: PoseTrack, address: int, px: np.ndarray):
+        self.view = detect_view(track, address)
+        ap = px[address]
+        # Head anchor = ears midpoint: stable under face rotation, unlike the
+        # nose (which sweeps sideways as the head turns and false-flags sway).
+        self.head0 = (ap[7] + ap[8]) / 2
+        ear_span = float(np.linalg.norm(ap[7] - ap[8]))
+        shoulder_mid = (ap[11] + ap[12]) / 2
+        self.head_r = max(16.0, ear_span * 1.15,
+                          float(np.linalg.norm(self.head0 - shoulder_mid))
+                          * 0.55)
+        # Balance lines sit just OUTSIDE the stance, like the coaching apps:
+        # sway shows as the body crossing the line, not the line on the leg.
+        pad = max(10.0, abs(ap[27, 0] - ap[28, 0]) * 0.18)
+        self.ankles_x = (min(ap[27, 0], ap[28, 0]) - pad,
+                         max(ap[27, 0], ap[28, 0]) + pad)
+        self.y_top = float(min(ap[0, 1] - self.head_r * 1.6, ap[0, 1] - 30))
+        self.y_bot = float(max(ap[27, 1], ap[28, 1]) + 14)
+        hip_mid = (ap[23] + ap[24]) / 2
+        d = shoulder_mid - hip_mid
+        d = d / (np.linalg.norm(d) + 1e-6)
+        self.post_a = hip_mid - d * 130
+        self.post_b = shoulder_mid + d * 110
+
+    def draw(self, frame, pts, scale: float):
+        import cv2
+
+        if self.view == "faceon":
+            for x in self.ankles_x:
+                cv2.line(frame, (int(x), int(self.y_top)),
+                         (int(x), int(self.y_bot)), _GUIDE_GREEN,
+                         max(1, int(2 * scale)), cv2.LINE_AA)
+                for y in (self.y_top, self.y_bot):
+                    cv2.circle(frame, (int(x), int(y)),
+                               max(3, int(4 * scale)), _GUIDE_GREEN, -1,
+                               cv2.LINE_AA)
+            tri = [tuple(pts[11].astype(int)), tuple(pts[12].astype(int)),
+                   tuple(((pts[15] + pts[16]) / 2).astype(int))]
+            for p, q in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+                cv2.line(frame, p, q, (242, 242, 242),
+                         max(1, int(2 * scale)), cv2.LINE_AA)
+        else:
+            cv2.line(frame, tuple(self.post_a.astype(int)),
+                     tuple(self.post_b.astype(int)), _GUIDE_YELLOW,
+                     max(1, int(2 * scale)), cv2.LINE_AA)
+            hip_mid = (pts[23] + pts[24]) / 2
+            sh_mid = (pts[11] + pts[12]) / 2
+            cv2.line(frame, tuple(hip_mid.astype(int)),
+                     tuple(sh_mid.astype(int)), _GUIDE_CYAN,
+                     max(1, int(2 * scale)), cv2.LINE_AA)
+
+        # Head circle (both views): frozen at address; amber when the live
+        # head marker leaves it.
+        head_now = (pts[7] + pts[8]) / 2
+        drift = float(np.linalg.norm(head_now - self.head0))
+        color = _GUIDE_CYAN if drift <= self.head_r else _GUIDE_WARN
+        cv2.circle(frame, tuple(self.head0.astype(int)), int(self.head_r),
+                   color, max(1, int(2 * scale)), cv2.LINE_AA)
+        cv2.circle(frame, tuple(head_now.astype(int)), max(3, int(4 * scale)),
+                   color, -1, cv2.LINE_AA)
+        return frame
+
+
 def _hud(frame, left: str, right: str, scale: float):
     """Bottom translucent bar with left/right text."""
     import cv2
@@ -175,6 +261,7 @@ def render_swing_video(
     wrist_px = (px[:, L_WRIST] + px[:, R_WRIST]) / 2.0
     scale = track.height / 850.0
     hold_n = int(fps * hold_s)
+    guides = Guides(track, a, px)
 
     def phase_of(fi):
         if fi < a:
@@ -207,10 +294,11 @@ def render_swing_video(
                 trail_cols.append(_TRAIL_DOWN)
             else:
                 trail_cols.append(_TRAIL_FOLLOW)
+        guides.draw(frame, px[fi], scale)
         draw_trail(frame, trail_pts, trail_cols, scale)
         draw_skeleton(frame, px[fi], scale)
         phase = phase_of(fi)
-        _hud(frame, f"SwingSense  |  {phase}",
+        _hud(frame, f"SwingSense  |  {phase}  |  {guides.view}",
              f"{(fi - a) / fps:+.2f}s", scale)
 
         repeats = slow_downswing if (top < fi <= imp) else 1

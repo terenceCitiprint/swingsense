@@ -275,3 +275,19 @@ def test_annotated_video_render(tmp_path, good):
     a = feats["events"]["address"]["frame"]
     fin = feats["events"]["finish"]["frame"]
     assert n_out > (fin - a)
+
+
+def test_guides_render(tmp_path, good):
+    from swingsense.vision.render_video import Guides, detect_view, smooth_pixels
+
+    track, feats = good
+    a = feats["events"]["address"]["frame"]
+    px = smooth_pixels(track)
+    view = detect_view(track, a)
+    assert view in ("faceon", "dtl")
+    g = Guides(track, a, px)
+    import numpy as np
+    frame = np.zeros((track.height, track.width, 3), dtype=np.uint8)
+    out = g.draw(frame, px[a], track.height / 850.0)
+    assert out.shape == frame.shape
+    assert out.sum() > 0  # something was drawn
