@@ -44,7 +44,63 @@ class PoseTrack:
 
 def extract_pose(video_path: str, model_variant: str = "full") -> PoseTrack:
     """Detect pose in every frame. Missing detections carry forward the last
-    known pose so downstream feature code sees a continuous signal."""
+    known pose so downstream feature code sees a continuous signal.
+
+    Prefers the MediaPipe Tasks landmarker (downloaded once); if the model
+    cannot be fetched (offline / blocked network), falls back to the legacy
+    solutions API whose models ship inside the pip package.
+    """
+    try:
+        return _extract_pose_tasks(video_path, model_variant)
+    except Exception:
+        return _extract_pose_legacy(video_path, model_variant)
+
+
+def _extract_pose_legacy(video_path: str, model_variant: str) -> PoseTrack:
+    """Offline path: mp.solutions.pose with bundled models."""
+    import cv2
+    import mediapipe as mp
+
+    complexity = {"lite": 0, "full": 1, "heavy": 2}.get(model_variant, 1)
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    landmarks = np.zeros((n, 33, 4), dtype=np.float32)
+    detected = np.zeros(n, dtype=bool)
+    last = np.zeros((33, 4), dtype=np.float32)
+
+    with mp.solutions.pose.Pose(
+        static_image_mode=False,
+        model_complexity=complexity,
+        smooth_landmarks=True,
+    ) as pose:
+        for i in range(n):
+            ok, frame = cap.read()
+            if not ok:
+                landmarks[i] = last
+                continue
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            result = pose.process(rgb)
+            if result.pose_landmarks:
+                arr = np.array(
+                    [[p.x, p.y, p.z, p.visibility]
+                     for p in result.pose_landmarks.landmark],
+                    dtype=np.float32,
+                )
+                landmarks[i] = arr
+                last = arr
+                detected[i] = True
+            else:
+                landmarks[i] = last
+    cap.release()
+    return PoseTrack(landmarks=landmarks, fps=fps, width=width, height=height,
+                     detected=detected)
+
+
+def _extract_pose_tasks(video_path: str, model_variant: str) -> PoseTrack:
     import cv2
     import mediapipe as mp
     from mediapipe.tasks import python

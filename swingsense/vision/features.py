@@ -74,31 +74,45 @@ def _smooth(x: np.ndarray, k: int = 5) -> np.ndarray:
 
 
 def detect_events(track: PoseTrack) -> dict:
-    """Locate address, top of backswing, and impact from the hand-path trace.
+    """Locate address, top of backswing, and impact from the hand path.
 
-    Strategy: the wrists trace a big vertical arc. The top of the backswing is
-    the highest hand position (min y). Address is the lowest stable hand
-    position before that; impact is the lowest hand position just after it
-    (before the hands rise again into the finish).
+    Anchor: the fastest hand motion in a golf swing is the downswing into
+    impact. Working backward from that speed peak is robust on real footage,
+    where the follow-through often raises the hands HIGHER than the top of the
+    backswing (so a global highest-hands rule grabs the finish, not the top —
+    a failure mode found on real clips).
+
+    Order of operations: speed peak -> top = highest hands shortly BEFORE the
+    peak -> address = lowest stable hands before the top -> impact = first
+    descent back through address height after the top.
     """
     wrist = track.midpoint(L_WRIST, R_WRIST)
     y = _smooth(wrist[:, 1])  # vertical hand path
+    x = _smooth(wrist[:, 0])
     n = len(y)
+    fps = track.fps
 
-    # Top of backswing = highest hands overall (smallest y).
-    top = int(np.argmin(y))
+    # 1. Anchor: global peak hand speed ~ the impact zone.
+    speed = np.zeros(n)
+    if n > 1:
+        speed[1:] = np.hypot(np.diff(x), np.diff(y)) * fps
+        speed = _smooth(speed, 5)
+    anchor = int(np.argmax(speed)) if n > 1 else 0
 
-    # Takeaway/address: lowest hands (largest y) shortly before the top. Keep the
-    # window tight (~1.2s) so a long static setup or waggle isn't counted as
-    # backswing time and doesn't inflate the tempo ratio.
-    addr_lo = max(0, top - int(track.fps * 1.2))
+    # 2. Top of backswing: highest hands in a window shortly before the
+    #    speed peak (the downswing at 30fps lasts only a handful of frames).
+    top_lo = max(0, anchor - int(fps * 1.5))
+    top_hi = max(top_lo + 1, anchor + 1)
+    top = top_lo + int(np.argmin(y[top_lo:top_hi]))
+
+    # 3. Address: lowest hands shortly before the top. Tight window (~1.2s)
+    #    so a long static setup or waggle isn't counted as backswing time.
+    addr_lo = max(0, top - int(fps * 1.2))
     address = addr_lo + int(np.argmax(y[addr_lo:top])) if top > addr_lo else 0
 
-    # Impact: physically, the hands return to roughly their address height as the
-    # club comes back to the ball. Find the first frame after the top where the
-    # hand path descends back through the address level. Fall back to peak hand
-    # speed if that crossing never happens (e.g. a clipped follow-through).
-    imp_hi = min(n, top + int(track.fps * 0.8))
+    # 4. Impact: first frame after the top where the hand path descends back
+    #    through the address level. Fall back to the speed peak itself.
+    imp_hi = min(n, max(anchor + int(fps * 0.5), top + int(fps * 0.8)))
     address_y = y[address]
     impact = None
     for j in range(top + 1, imp_hi):
@@ -106,17 +120,12 @@ def detect_events(track: PoseTrack) -> dict:
             impact = j
             break
     if impact is None:
-        wx = _smooth(wrist[:, 0])
-        if imp_hi > top + 1:
-            speed = np.hypot(np.diff(wx[top:imp_hi]), np.diff(y[top:imp_hi]))
-            impact = top + 1 + int(np.argmax(speed))
-        else:
-            impact = min(top + 1, n - 1)
+        impact = anchor if anchor > top else min(top + 1, n - 1)
 
-    finish = min(n - 1, impact + int(track.fps * 1.0))
+    finish = min(n - 1, impact + int(fps * 1.0))
 
     def t(i: int) -> float:
-        return round(i / track.fps, 3)
+        return round(i / fps, 3)
 
     return {
         "address": {"frame": address, "t": t(address)},

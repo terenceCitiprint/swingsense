@@ -37,17 +37,28 @@ def _speed_to_bgr(v: float) -> tuple[int, int, int]:
 
 
 def _draw_colored_skeleton(frame, row, speeds_norm, width, height, thickness=3):
+    """Glow-style skeleton with velocity-colored bones and ringed joints."""
     import cv2
+    import numpy as np
 
     def px(i):
         return int(row[i, 0] * width), int(row[i, 1] * height)
 
+    glow = np.zeros_like(frame)
+    segs = []
     for a, b in _CONNECTIONS:
         if row[a, 3] > 0.3 and row[b, 3] > 0.3:
             v = (speeds_norm[a] + speeds_norm[b]) / 2.0
-            cv2.line(frame, px(a), px(b), _speed_to_bgr(v), thickness, cv2.LINE_AA)
+            segs.append((px(a), px(b), _speed_to_bgr(v)))
+    for p, q, c in segs:
+        cv2.line(glow, p, q, c, thickness * 3, cv2.LINE_AA)
+    glow = cv2.GaussianBlur(glow, (0, 0), 5)
+    cv2.add(frame, (glow * 0.5).astype(frame.dtype), frame)
+    for p, q, c in segs:
+        cv2.line(frame, p, q, c, thickness, cv2.LINE_AA)
     for i in _JOINTS:
         if row[i, 3] > 0.3:
+            cv2.circle(frame, px(i), 5, (25, 32, 28), -1, cv2.LINE_AA)
             cv2.circle(frame, px(i), 4, _speed_to_bgr(speeds_norm[i]), -1, cv2.LINE_AA)
             cv2.circle(frame, px(i), 4, (245, 245, 245), 1, cv2.LINE_AA)
     return frame

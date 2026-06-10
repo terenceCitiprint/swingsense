@@ -53,6 +53,10 @@ swingsense analyze swing.mp4 --feel "felt smooth but the ball went right" -c dri
 # Full visual report (panorama, sequence chart, 3D loop) — works with or
 # without the LLM step
 swingsense analyze swing.mp4 --report report.html
+
+# Annotated video: glow skeleton on the footage, comet hand-path trail,
+# freeze-frame event cards with joint callouts, slow-mo downswing + trace card
+swingsense analyze swing.mp4 --features-only --render annotated.mp4
 swingsense analyze swing.mp4 --features-only --report report.html  # no API cost
 
 # Compare two swings (before/after a drill) — phase-aligned overlay + deltas

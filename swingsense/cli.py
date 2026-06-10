@@ -74,6 +74,11 @@ def analyze(
         None, "--report", "-r",
         help="Also write a visual HTML report (panorama, charts, 3D loop) here.",
     ),
+    render: str | None = typer.Option(
+        None, "--render",
+        help="Also write an annotated mp4 (glow skeleton, hand-path trail, "
+             "event freeze-frames, slow-mo downswing) + a trace-card png.",
+    ),
 ):
     """Extract biomechanics from a swing video and reason over them with your feel."""
     path = Path(video).expanduser()
@@ -98,6 +103,18 @@ def analyze(
     render_features(feats)
 
     def _write_report(analysis_dict: dict | None) -> None:
+        if render:
+            from .vision.render_video import (render_swing_video,
+                                              render_trace_card)
+
+            with console.status("Rendering annotated video ..."):
+                tempo_r = feats["metrics"]["tempo"].get("ratio_back_to_down")
+                render_swing_video(track, str(path), feats["events"], render,
+                                   tempo_ratio=tempo_r)
+                card = str(Path(render).with_suffix(".trace.png"))
+                render_trace_card(track, str(path), feats["events"], card)
+            console.print(f"[green]Annotated video:[/green] {render}")
+            console.print(f"[green]Trace card:[/green] {card}")
         if not report:
             return
         from .report import build_report

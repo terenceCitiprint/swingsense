@@ -255,3 +255,23 @@ def test_full_swing_loop_in_report(tmp_path, bad):
     for m in ("mesh3d", "downswing plane (fit)", "Path analysis",
               "full swing", "hand path"):
         assert m.lower() in doc.lower(), f"missing: {m}"
+
+
+def test_annotated_video_render(tmp_path, good):
+    from swingsense.vision.render_video import (render_swing_video,
+                                                render_trace_card)
+
+    track, feats = good
+    video = write_video(track, str(tmp_path / "in.mp4"))
+    out = render_swing_video(track, video, feats["events"],
+                             str(tmp_path / "out.mp4"), tempo_ratio=3.0)
+    assert (tmp_path / "out.mp4").stat().st_size > 10_000
+    card = render_trace_card(track, video, feats["events"],
+                             str(tmp_path / "card.png"))
+    assert (tmp_path / "card.png").stat().st_size > 5_000
+    # The annotated video should be LONGER than the swing segment it covers
+    # (slow-mo downswing + event freeze-frames add frames).
+    n_out = int(cv2.VideoCapture(out).get(cv2.CAP_PROP_FRAME_COUNT))
+    a = feats["events"]["address"]["frame"]
+    fin = feats["events"]["finish"]["frame"]
+    assert n_out > (fin - a)
