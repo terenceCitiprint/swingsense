@@ -8,6 +8,68 @@ from rich.table import Table
 
 console = Console()
 
+def render_features(features: dict) -> None:
+    """Show the measured swing features from the video pipeline."""
+    conf = features.get("confidence", "unknown")
+    conf_style = _CONFIDENCE_STYLE.get(conf, "white")
+    events = features.get("events", {})
+    metrics = features.get("metrics", {})
+
+    reliable = events.get("reliable")
+    rel_txt = (
+        "[green]events reliable[/green]"
+        if reliable
+        else "[red]events UNRELIABLE[/red]"
+    )
+    console.print(
+        Panel(
+            f"Measured from video — [{conf_style}]confidence: {conf}[/{conf_style}]"
+            f"  ·  {rel_txt}",
+            title="📐 Video features (2D single-camera proxy)",
+            border_style="blue",
+        )
+    )
+
+    if events:
+        t = Table(title="Swing events", expand=True)
+        t.add_column("Event", style="bold")
+        t.add_column("Frame")
+        t.add_column("Time (s)")
+        for name in ("address", "top", "impact", "finish"):
+            ev = events.get(name)
+            if isinstance(ev, dict):
+                t.add_row(name, str(ev.get("frame", "")), str(ev.get("t", "")))
+        console.print(t)
+
+    tempo = metrics.get("tempo", {})
+    rot = metrics.get("rotation", {})
+    if tempo or rot:
+        t = Table(title="Key metrics", expand=True)
+        t.add_column("Metric", style="cyan")
+        t.add_column("Value")
+        if tempo:
+            flag = "" if tempo.get("reliable", True) else " [red](approx)[/red]"
+            t.add_row(
+                "Tempo (back:down)",
+                f"{tempo.get('ratio_back_to_down')}:1  "
+                f"({tempo.get('backswing_s')}s / {tempo.get('downswing_s')}s){flag}",
+            )
+        for label in ("address", "top", "impact"):
+            r = rot.get(label)
+            if r:
+                t.add_row(
+                    f"Separation @ {label}", f"{r.get('separation_deg')}° (proxy)"
+                )
+        if "hand_visibility" in metrics:
+            t.add_row("Hand tracking", f"{metrics['hand_visibility']} (0-1)")
+        console.print(t)
+
+    notes = features.get("notes", [])
+    if notes:
+        body = "\n".join(f"• {n}" for n in notes)
+        console.print(Panel(body, title="Caveats", border_style="yellow"))
+
+
 _RELATION_STYLE = {
     "supports": "green",
     "contradicts": "red",

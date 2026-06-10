@@ -10,19 +10,31 @@ contradictions, and suggests cues or drills you can test. Everything is logged
 locally so the tool builds up a picture of *your* patterns over time.
 
 > See [`PLAN.md`](PLAN.md) for the full architecture and roadmap. This repo is
-> currently at **Phase 0: the text-only feel translator** (no video yet).
+> at **Phase 1**: a text feel translator **plus** a video pipeline that extracts
+> pose and biomechanics from a swing clip.
 
 ## Install
 
 ```bash
-pip install -e .          # or: uv pip install -e .
+pip install -e .              # core (feel translator)
+pip install -e ".[vision]"    # + video analysis (opencv, mediapipe)
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+On a slim Linux box the MediaPipe runtime may need a system GL library:
+`apt-get install -y libgles2 libegl1 libgl1`. The pose model (~9 MB) is
+downloaded and cached on first `analyze`.
 
 ## Use
 
 ```bash
-# Translate a feel into mechanics, cross-referenced with physics
+# Analyze a swing video: extract pose + biomechanics, reason over them with feel
+swingsense analyze swing.mp4 --feel "felt stuck behind me" --club driver
+
+# Just the measured video features, no LLM call (no API key needed)
+swingsense analyze swing.mp4 --features-only
+
+# Translate a feel into mechanics, cross-referenced with physics (no video)
 swingsense feel "felt stuck behind me, hands too active" --club driver
 
 # Preview the reasoning prompt WITHOUT calling the API (no key needed)
@@ -69,7 +81,18 @@ feel text ──▶ prompt (feel + knowledge base + recent history) ──▶ Cl
 
 ## Roadmap
 
-Phase 0 (this) → **Phase 1** video pose extraction → **Phase 2** biomechanics
-features (kinematic sequence, X-factor, tempo) → **Phase 3** cross-reference
-engine on measured data → **Phase 4** quantitative physics (double-pendulum →
-inverse dynamics). Details in [`PLAN.md`](PLAN.md).
+Phase 0 (feel translator) ✓ → **Phase 1** video pose + first biomechanics
+features (events, tempo, rotation proxies, head movement) ✓ → **Phase 2** deeper
+features (true kinematic sequence, X-factor, club tracking, launch-monitor OCR)
+→ **Phase 3** richer cross-reference on measured data → **Phase 4** quantitative
+physics (double-pendulum → inverse dynamics). Details in [`PLAN.md`](PLAN.md).
+
+### Honesty about Phase 1 limits
+
+Single-camera 2D pose is a **proxy**: depth and true 3D turn are approximate, the
+**club is not tracked**, and low frame rates blur the downswing. Every analysis
+reports a **confidence** and **reliability flags** — e.g. a swing where the
+golfer is small in frame (poor hand tracking) is marked low-confidence, and
+tempo measured below the camera's time resolution is flagged approximate. Shoot
+**120–240 fps**, fill the frame with the body, and use a plain background for the
+best results.

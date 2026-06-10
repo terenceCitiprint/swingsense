@@ -37,8 +37,13 @@ def analyze_feel(
     kb: list[KBEntry],
     club: str | None = None,
     history: list[Swing] | None = None,
+    features: dict | None = None,
 ) -> dict:
-    """Call Claude and return the parsed structured analysis."""
+    """Call Claude and return the parsed structured analysis.
+
+    `features` is the optional measured-feature dict from the video pipeline
+    (Phase 1); when present the model grounds its reasoning in it.
+    """
     key = config.api_key()
     if not key:
         raise EngineError(
@@ -50,7 +55,7 @@ def analyze_feel(
     import anthropic
 
     client = anthropic.Anthropic(api_key=key)
-    user_prompt = build_user_prompt(feel, kb, club, history)
+    user_prompt = build_user_prompt(feel, kb, club, history, features)
 
     try:
         resp = client.messages.create(

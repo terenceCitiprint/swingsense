@@ -6,11 +6,13 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from pathlib import Path
+
 from . import __version__, config, db
 from .engine import EngineError, analyze_feel
 from .knowledge import load_knowledge
 from .prompts import build_user_prompt
-from .render import render_analysis
+from .render import render_analysis, render_features
 
 app = typer.Typer(
     help="Bridge what your golf swing FEELS like and what's actually happening.",
@@ -55,6 +57,70 @@ def feel(
 
 
 @app.command()
+def analyze(
+    video: str = typer.Argument(..., help="Path to a swing video (mp4/mov)."),
+    feel: str | None = typer.Option(
+        None, "--feel", "-f", help="How the swing felt (optional)."
+    ),
+    club: str | None = typer.Option(None, "--club", "-c", help="e.g. driver, 7i."),
+    tag: list[str] = typer.Option([], "--tag", "-t", help="Repeatable tag."),
+    model: str = typer.Option(
+        "full", "--model", help="Pose model: lite | full | heavy."
+    ),
+    features_only: bool = typer.Option(
+        False, "--features-only", help="Extract video features; skip the LLM."
+    ),
+):
+    """Extract biomechanics from a swing video and reason over them with your feel."""
+    path = Path(video).expanduser()
+    if not path.exists():
+        console.print(f"[red]No such video:[/red] {path}")
+        raise typer.Exit(code=1)
+
+    # Heavy CV deps are imported lazily so the rest of the CLI stays light.
+    try:
+        from .vision.features import compute_features
+        from .vision.pose import extract_pose
+    except ImportError as exc:
+        console.print(
+            f"[red]Video support needs extra deps (opencv, mediapipe):[/red] {exc}"
+        )
+        raise typer.Exit(code=1)
+
+    with console.status(f"Extracting pose from {path.name} ..."):
+        track = extract_pose(str(path), model_variant=model)
+        feats = compute_features(track).to_dict()
+
+    render_features(feats)
+
+    if features_only:
+        return
+
+    kb = load_knowledge()
+    history_ctx = db.list_swings(limit=5, club=club)
+    try:
+        analysis = analyze_feel(
+            feel or "", kb, club=club, history=history_ctx, features=feats
+        )
+    except EngineError as exc:
+        console.print(f"\n[yellow]Skipping reasoning step:[/yellow] {exc}")
+        console.print("[dim]Measured features above are still valid.[/dim]")
+        raise typer.Exit(code=1)
+
+    analysis["_features"] = feats  # persist measurements alongside the reasoning
+    swing_id = db.add_swing(
+        feel=feel or "(video only)",
+        analysis=analysis,
+        club=club,
+        video_path=str(path),
+        tags=list(tag),
+    )
+    console.print()
+    render_analysis(analysis, swing_id=swing_id)
+    console.print(f"\n[dim]Saved as swing #{swing_id}.[/dim]")
+
+
+@app.command()
 def history(
     last: int = typer.Option(10, "--last", "-n", help="How many to show."),
     club: str | None = typer.Option(None, "--club", "-c", help="Filter by club."),
@@ -91,6 +157,12 @@ def show(swing_id: int = typer.Argument(..., help="Swing id from `history`.")):
     console.print(f"[bold]Feel:[/bold] {swing.feel}")
     if swing.club:
         console.print(f"[bold]Club:[/bold] {swing.club}")
+    if swing.video_path:
+        console.print(f"[bold]Video:[/bold] {swing.video_path}")
+    feats = swing.analysis.get("_features")
+    if feats:
+        render_features(feats)
+        console.print()
     render_analysis(swing.analysis, swing_id=swing.id)
 
 
