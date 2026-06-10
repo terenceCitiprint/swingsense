@@ -48,6 +48,17 @@ def build_ghost(track: PoseTrack, kin: Kinematics, events: dict) -> Ghost:
     min_gap = max(1, int(round(_MIN_GAP_S * fps)))
 
     peaks = kin.segment_peaks(top, imp)
+
+    # Gate on the same verdict the report shows: if the firing order already
+    # matches the ideal, never show a ghost — even if peak gaps are tight.
+    # (Without this, a 1-frame tie could trigger a "correction" on a swing the
+    # sequence chart calls in-order, which would contradict the report.)
+    order = sorted(peaks, key=peaks.get)
+    if order == ["pelvis", "thorax", "arm", "hands"]:
+        return Ghost(landmarks=track.landmarks, changed=False,
+                     description="Sequence already fires in order — no timing "
+                                 "correction needed.", shifts={})
+
     ghost = track.landmarks.copy()
     shifts: dict[str, int] = {}
 

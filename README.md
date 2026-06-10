@@ -52,6 +52,12 @@ swingsense analyze swing.mp4 --feel "felt smooth but the ball went right" -c dri
 swingsense analyze swing.mp4 --report report.html
 swingsense analyze swing.mp4 --features-only --report report.html  # no API cost
 
+# Compare two swings (before/after a drill) — phase-aligned overlay + deltas
+swingsense compare before.mp4 after.mp4 --report comparison.html
+
+# Trends across your logged swings (tempo, separation, confidence over time)
+swingsense trends --report trends.html
+
 # Just the measurements, no LLM call
 swingsense analyze swing.mp4 --features-only
 
