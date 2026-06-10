@@ -1,0 +1,81 @@
+# Physics & biomechanics principles the engine reasons over.
+# These are general, widely-accepted concepts. Edit/extend freely — this file
+# is yours. Each entry: id, name, summary, details, source, tags.
+
+entries:
+  - id: kinematic_sequence
+    name: Kinematic sequence
+    summary: >
+      Efficient swings fire proximal-to-distal: pelvis, then thorax, then lead
+      arm, then club, each segment peaking in angular speed in that order.
+    details: >
+      Each segment accelerates, transfers momentum to the next, then decelerates
+      (the "summation of speed" principle). A break in the order — e.g. arms
+      firing before the pelvis — leaks energy and usually shows up as an
+      over-the-top move or early release. Timing GAPS between peaks matter as
+      much as the order.
+    source: General biomechanics (proximal-to-distal sequencing)
+    tags: [sequence, timing, transition, downswing]
+
+  - id: x_factor
+    name: X-factor and X-factor stretch
+    summary: >
+      Separation between hip (pelvis) rotation and shoulder (thorax) rotation.
+      Increasing that stretch early in the downswing stores elastic energy.
+    details: >
+      A larger, well-timed hip-shoulder separation at transition (the "stretch")
+      is associated with more clubhead speed via the stretch-shortening cycle.
+      Too little separation = arms-dominated swing; excessive separation without
+      mobility risks the lower back.
+    source: General biomechanics (X-factor literature)
+    tags: [rotation, separation, power, transition]
+
+  - id: double_pendulum
+    name: Double-pendulum lag and release
+    summary: >
+      Lead arm + club behave like a double pendulum hinged at the wrists. Holding
+      the wrist (lag) angle and releasing it late transfers speed to the clubhead.
+    details: >
+      Releasing wrist angle too early ("casting") spends the lever early and
+      bleeds clubhead speed; it also tends to raise the low point and add loft.
+      A passive, late release lets centripetal force unhinge the club near impact.
+      This is the core model the Phase 4 simulation will make quantitative.
+    source: Classical mechanics (double pendulum model of the swing)
+    tags: [lag, release, wrist, speed, casting]
+
+  - id: ground_reaction
+    name: Ground reaction forces
+    summary: >
+      Force into the ground (vertical, horizontal, and torque) is the engine that
+      drives rotation and speed; weight shifts from trail to lead through the swing.
+    details: >
+      Vertical force (pushing down/up) contributes to "jump"-style speed
+      generation; horizontal and rotational (torque) components drive the turn.
+      Center-of-pressure typically moves toward the lead foot through the
+      downswing. Quantifying this needs force plates; conceptually it explains
+      sequencing and sway/slide tendencies.
+    source: General biomechanics (force-plate research)
+    tags: [ground, force, weight-shift, power]
+
+  - id: tempo_ratio
+    name: Tempo (backswing:downswing ratio)
+    summary: >
+      Many efficient swings show a roughly 3:1 ratio of backswing time to
+      downswing time, regardless of overall speed.
+    details: >
+      Tempo is about ratio and rhythm, not raw quickness. A rushed transition
+      (ratio collapsing toward 1:1) often disrupts the kinematic sequence.
+    source: General observation (tempo research)
+    tags: [tempo, rhythm, timing, transition]
+
+  - id: clubface_wrist
+    name: Lead-wrist condition and clubface
+    summary: >
+      Lead-wrist flexion/extension is a strong proxy for clubface orientation at
+      impact; added flexion tends to close the face, extension tends to open it.
+    details: >
+      "Feels" about the hands and face are notoriously inverted — a player who
+      feels "shut" may measure neutral. This is a prime spot for feel-vs-real
+      contradiction checks.
+    source: General biomechanics (wrist kinematics)
+    tags: [wrist, clubface, impact, hands]
