@@ -210,23 +210,52 @@ def kb():
 @app.command()
 def compare(
     video_a: str = typer.Argument(..., help="First swing video (the 'before')."),
-    video_b: str = typer.Argument(..., help="Second swing video (the 'after')."),
+    video_b: str | None = typer.Argument(
+        None, help="Second swing video (the 'after'). Omit when using --pro."),
     out: str = typer.Option("compare.html", "--out", "-o", help="Report path."),
     label_a: str = typer.Option("before", help="Label for the first swing."),
     label_b: str = typer.Option("after", help="Label for the second swing."),
+    pro: str | None = typer.Option(
+        None, "--pro", help="Compare against a stored reference "
+        "(see `swingsense pro list`) instead of a second video."),
     model: str = typer.Option("full", "--model", help="Pose model variant."),
 ):
-    """Compare two swings: time-aligned overlay, metric deltas, panoramas."""
-    paths = [Path(video_a).expanduser(), Path(video_b).expanduser()]
-    for p in paths:
-        if not p.exists():
-            console.print(f"[red]No such video:[/red] {p}")
-            raise typer.Exit(code=1)
+    """Compare two swings, or one swing against a stored pro reference."""
     try:
         from .vision.features import compute_features
         from .vision.pose import extract_pose
     except ImportError as exc:
         console.print(f"[red]Video support needs extra deps:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    path_a = Path(video_a).expanduser()
+    if not path_a.exists():
+        console.print(f"[red]No such video:[/red] {path_a}")
+        raise typer.Exit(code=1)
+
+    if pro:
+        from .pro import build_pro_comparison, load_reference
+
+        ref = load_reference(pro)
+        if not ref:
+            console.print(f"[red]No reference named '{pro}'.[/red] "
+                          "See: swingsense pro list")
+            raise typer.Exit(code=1)
+        with console.status(f"Extracting pose from {path_a.name} ..."):
+            t = extract_pose(str(path_a), model_variant=model)
+            f = compute_features(t).to_dict()
+        with console.status("Rendering comparison vs reference ..."):
+            result = build_pro_comparison(t, f, str(path_a), ref, out,
+                                          label=label_a)
+        console.print(f"[green]Comparison written:[/green] {result}")
+        return
+
+    if not video_b:
+        console.print("[red]Provide a second video, or use --pro NAME.[/red]")
+        raise typer.Exit(code=1)
+    paths = [path_a, Path(video_b).expanduser()]
+    if not paths[1].exists():
+        console.print(f"[red]No such video:[/red] {paths[1]}")
         raise typer.Exit(code=1)
 
     tracks, feats = [], []
@@ -245,6 +274,67 @@ def compare(
             out, labelA=label_a, labelB=label_b,
         )
     console.print(f"[green]Comparison written:[/green] {result}")
+
+
+pro_app = typer.Typer(help="Manage the pro/reference swing library.",
+                      no_args_is_help=True)
+app.add_typer(pro_app, name="pro")
+
+
+@pro_app.command("add")
+def pro_add(
+    video: str = typer.Argument(..., help="Reference swing video you have "
+                                "rights to use."),
+    name: str = typer.Option(..., "--name", "-n",
+                             help="Reference name, e.g. 'tour_dtl_driver'."),
+    source: str = typer.Option("", "--source", help="Where the clip is from."),
+    model: str = typer.Option("full", "--model", help="Pose model variant."),
+):
+    """Ingest a reference swing into the local library (stores derived
+    signals only, not the video)."""
+    path = Path(video).expanduser()
+    if not path.exists():
+        console.print(f"[red]No such video:[/red] {path}")
+        raise typer.Exit(code=1)
+    try:
+        from .vision.features import compute_features
+        from .vision.pose import extract_pose
+    except ImportError as exc:
+        console.print(f"[red]Video support needs extra deps:[/red] {exc}")
+        raise typer.Exit(code=1)
+    from .pro import add_reference
+
+    with console.status(f"Extracting pose from {path.name} ..."):
+        track = extract_pose(str(path), model_variant=model)
+        feats = compute_features(track).to_dict()
+    if not feats["events"].get("reliable"):
+        console.print("[yellow]Warning: events unreliable on this clip — the "
+                      "stored reference will be low quality.[/yellow]")
+    out = add_reference(track, feats, name, source=source)
+    console.print(f"[green]Reference saved:[/green] {out}")
+
+
+@pro_app.command("list")
+def pro_list():
+    """List stored references."""
+    from .pro import list_references
+
+    refs = list_references()
+    if not refs:
+        console.print("[yellow]No references yet. Add one: "
+                      "swingsense pro add <video> --name <name>[/yellow]")
+        return
+    t = Table(title="Reference library")
+    t.add_column("Name", style="bold")
+    t.add_column("Tempo")
+    t.add_column("Order")
+    t.add_column("Conf")
+    t.add_column("Source", style="dim")
+    for r in refs:
+        t.add_row(r["name"], str(r.get("tempo_ratio")),
+                  " → ".join(r.get("firing_order", [])),
+                  str(r.get("confidence")), r.get("source", ""))
+    console.print(t)
 
 
 @app.command()

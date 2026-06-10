@@ -185,3 +185,36 @@ def test_trends(tmp_path, monkeypatch, good, bad):
     assert len(rows) == 2
     out = build_trends(str(tmp_path / "t.html"))
     assert out and "Tempo" in (tmp_path / "t.html").read_text()
+
+
+def test_pro_reference_roundtrip(tmp_path, monkeypatch, good, bad):
+    monkeypatch.setenv("SWINGSENSE_HOME", str(tmp_path))
+    from swingsense.pro import (add_reference, load_reference,
+                                build_pro_comparison, norms_assessment)
+
+    (tg, fg), (tb, fb) = good, bad
+    add_reference(tg, fg, "tour_model", source="test")
+    ref = load_reference("tour_model")
+    assert ref and len(ref["signals"]["pelvis"]) == 200
+    assert ref["firing_order"][0] == "pelvis"
+
+    kin = compute_kinematics(tb)
+    lines = norms_assessment(fb, kin, fb["events"])
+    assert any("reversed" in l or "simultaneously" in l for l in lines)
+
+    video = write_video(tb, str(tmp_path / "s.mp4"))
+    out = build_pro_comparison(tb, fb, video, ref,
+                               str(tmp_path / "vs.html"), label="you")
+    doc = (tmp_path / "vs.html").read_text()
+    assert "published tour norms" in doc and "tour_model" in doc
+
+
+def test_restyled_3d_loop_markers(tmp_path, bad):
+    from swingsense.report import build_report
+
+    track, feats = bad
+    video = write_video(track, str(tmp_path / "swing.mp4"))
+    build_report(track, feats, None, video, str(tmp_path / "r.html"))
+    doc = (tmp_path / "r.html").read_text()
+    for label in ("Head", "Upper torso", "Pelvis", "Stance", "hand path"):
+        assert label in doc, f"missing joint-group label: {label}"

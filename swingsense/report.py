@@ -137,12 +137,26 @@ def _separation_fig(track: PoseTrack, kin: Kinematics, events: dict):
     return fig
 
 
+_JOINT_GROUPS = [
+    # (legend label, landmark indices, marker color, size)
+    ("Head", [0], "#FF8A3D", 11),
+    ("Upper torso", [11, 12, 13, 14, 15, 16], "#E8590C", 7),
+    ("Pelvis", [23, 24], "#D9500B", 8),
+    ("Stance", [25, 26, 27, 28], "#C2470A", 7),
+]
+_BONE = "#C9B18C"   # tan skeleton lines, as in mocap-style overlays
+_GHOST = "#8C949B"
+
+
 def _loop3d_fig(track: PoseTrack, events: dict, window_s: float = 1.0,
                 ghost=None):
     """Interactive 3D skeleton animation around the transition (top of swing).
 
-    If `ghost` (a correction.Ghost with changed=True) is given, a second
-    grey skeleton shows the re-timed corrected motion at the same instant.
+    Styled like a mocap overlay: tan bones, orange joints with white rings,
+    joint groups labeled in the legend (Head / Upper torso / Pelvis / Stance),
+    on a dark scene with the hand path traced through the window. If `ghost`
+    (a correction.Ghost with changed=True) is given, a grey skeleton shows the
+    re-timed corrected motion at the same instant.
     """
     import plotly.graph_objects as go
 
@@ -154,44 +168,79 @@ def _loop3d_fig(track: PoseTrack, events: dict, window_s: float = 1.0,
     step = max(1, (hi - lo) // 40)  # cap ~40 animation frames
     idxs = list(range(lo, hi + 1, step))
 
-    def skel_trace(lm_frame, color, width, name, dash=None):
+    def xyz(lm, i):
+        return lm[i, 0], lm[i, 2], 1 - lm[i, 1]  # depth on Y, image-y flipped up
+
+    def bones_trace(lm, color, width, name=None, dash=None):
         xs, ys, zs = [], [], []
         for a, b in _CONNECTIONS:
-            xs += [lm_frame[a, 0], lm_frame[b, 0], None]
-            ys += [lm_frame[a, 2], lm_frame[b, 2], None]          # depth
-            zs += [1 - lm_frame[a, 1], 1 - lm_frame[b, 1], None]  # flip y to up
+            pa, pb = xyz(lm, a), xyz(lm, b)
+            xs += [pa[0], pb[0], None]
+            ys += [pa[1], pb[1], None]
+            zs += [pa[2], pb[2], None]
         line = dict(color=color, width=width)
         if dash:
             line["dash"] = dash
         return go.Scatter3d(x=xs, y=ys, z=zs, mode="lines", line=line,
-                            name=name, showlegend=(name is not None))
+                            name=name, showlegend=bool(name),
+                            hoverinfo="skip")
+
+    def joints_traces(lm):
+        out = []
+        for label, joints, color, size in _JOINT_GROUPS:
+            pts = [xyz(lm, j) for j in joints]
+            out.append(go.Scatter3d(
+                x=[p[0] for p in pts], y=[p[1] for p in pts],
+                z=[p[2] for p in pts], mode="markers", name=label,
+                marker=dict(size=size, color=color,
+                            line=dict(color="#F2F2F2", width=2)),
+            ))
+        return out
 
     show_ghost = ghost is not None and getattr(ghost, "changed", False)
 
     def frame_data(fi):
-        data = [skel_trace(track.landmarks[fi], "#2E6B46", 7, "actual")]
+        data = [bones_trace(track.landmarks[fi], _BONE, 8)]
+        data += joints_traces(track.landmarks[fi])
         if show_ghost:
-            data.append(skel_trace(ghost.landmarks[fi], "#9AA39B", 5,
-                                   "ghost (re-timed)", dash="dot"))
+            data.append(bones_trace(ghost.landmarks[fi], _GHOST, 5,
+                                    name="ghost (re-timed)", dash="dot"))
         return data
 
     frames = [go.Frame(data=frame_data(fi), name=f"{fi / fps:.2f}s")
               for fi in idxs]
+
+    # Static hand path through the window — appended AFTER the animated traces
+    # so frame updates (which replace traces by index) never touch it.
+    wrist = (track.landmarks[lo:hi + 1, 15, :] +
+             track.landmarks[lo:hi + 1, 16, :]) / 2.0
+    path_trace = go.Scatter3d(
+        x=wrist[:, 0], y=wrist[:, 2], z=1 - wrist[:, 1], mode="lines",
+        line=dict(color="#FFC845", width=4), name="hand path",
+        opacity=0.65,
+    )
+
     title = ("3D loop — transition window (rotate me; depth is MediaPipe's "
              "estimate, illustrative not measured)")
     if show_ghost:
-        title = ("3D loop — actual (green) vs ghost (grey, your motion "
-                 "re-timed to fire in order)")
-    fig = go.Figure(data=frame_data(idxs[0]), frames=frames)
+        title = ("3D loop — joints labeled; grey ghost = your motion re-timed "
+                 "to fire in order. Depth illustrative.")
+    fig = go.Figure(data=frame_data(idxs[0]) + [path_trace], frames=frames)
     fig.update_layout(
-        title=title,
+        title=dict(text=title, font=dict(color="#E8E8E4", size=15)),
+        paper_bgcolor="#10150F",
+        legend=dict(font=dict(color="#D8DCD4"), orientation="h", y=0.02,
+                    bgcolor="rgba(0,0,0,0)"),
         scene=dict(
             xaxis=dict(visible=False), yaxis=dict(visible=False),
             zaxis=dict(visible=False), aspectmode="data",
+            bgcolor="#10150F",
+            camera=dict(eye=dict(x=0.0, y=-2.2, z=0.15)),  # face-on default
         ),
         height=560, margin=dict(t=70, b=10),
         updatemenus=[dict(
             type="buttons", showactive=False, y=0, x=0,
+            font=dict(color="#14211A"), bgcolor="#E8E8E4",
             buttons=[
                 dict(label="▶ play", method="animate",
                      args=[None, dict(frame=dict(duration=70, redraw=True),
@@ -202,6 +251,7 @@ def _loop3d_fig(track: PoseTrack, events: dict, window_s: float = 1.0,
             ],
         )],
         sliders=[dict(
+            font=dict(color="#D8DCD4"),
             steps=[dict(method="animate", label=f.name,
                         args=[[f.name], dict(mode="immediate",
                                              frame=dict(duration=0, redraw=True))])
@@ -220,7 +270,8 @@ def _esc(s) -> str:
     return html.escape(str(s or ""))
 
 
-def _tier1_html(analysis: dict | None, features: dict, seq: dict) -> str:
+def _tier1_html(analysis: dict | None, features: dict, seq: dict,
+                norms: list[str] | None = None) -> str:
     """Plain-language read: tendency, simple changes, drills."""
     parts = []
     if analysis:
@@ -254,6 +305,11 @@ def _tier1_html(analysis: dict | None, features: dict, seq: dict) -> str:
         f"</strong></li>"
         f"<li>Tempo {_esc(tempo.get('ratio_back_to_down'))}:1 "
         f"(classic efficient swings sit near 3:1)</li></ul></div>")
+    if norms:
+        items = "".join(f"<li>{_esc(n)}</li>" for n in norms)
+        parts.append(
+            f"<div class='block'><h3>vs tour norms (published timing bands)"
+            f"</h3><ul>{items}</ul></div>")
     return "\n".join(parts)
 
 
@@ -274,6 +330,11 @@ def build_report(
     events = features["events"]
     seq = sequence_read(kin, events["top"]["frame"], events["impact"]["frame"])
     ghost = build_ghost(track, kin, events)
+    try:
+        from .pro import norms_assessment
+        norms = norms_assessment(features, kin, events)
+    except Exception:
+        norms = None
 
     pano = panorama_path or str(Path(out_path).with_suffix(".panorama.png"))
     panorama_strip(track, video_path, events, kin, pano)
@@ -361,7 +422,7 @@ def build_report(
 
 <section>
   <h2>The read</h2>
-  {_tier1_html(analysis, features, seq)}
+  {_tier1_html(analysis, features, seq, norms)}
 </section>
 
 <section>

@@ -58,6 +58,12 @@ swingsense compare before.mp4 after.mp4 --report comparison.html
 # Trends across your logged swings (tempo, separation, confidence over time)
 swingsense trends --report trends.html
 
+# Pro reference library: ingest a reference swing you have rights to use,
+# then overlay your swing against it (phase-aligned, same pipeline)
+swingsense pro add reference.mp4 --name tour_dtl
+swingsense pro list
+swingsense compare myswing.mp4 --pro tour_dtl --out vs_pro.html
+
 # Just the measurements, no LLM call
 swingsense analyze swing.mp4 --features-only
 
