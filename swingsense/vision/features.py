@@ -94,24 +94,16 @@ def detect_events(track: PoseTrack) -> dict:
     addr_lo = max(0, top - int(track.fps * 1.2))
     address = addr_lo + int(np.argmax(y[addr_lo:top])) if top > addr_lo else 0
 
-    # Impact: physically, the hands return to roughly their address height as the
-    # club comes back to the ball. Find the first frame after the top where the
-    # hand path descends back through the address level. Fall back to peak hand
-    # speed if that crossing never happens (e.g. a clipped follow-through).
-    imp_hi = min(n, top + int(track.fps * 0.8))
-    address_y = y[address]
-    impact = None
-    for j in range(top + 1, imp_hi):
-        if y[j] >= address_y:
-            impact = j
-            break
-    if impact is None:
-        wx = _smooth(wrist[:, 0])
-        if imp_hi > top + 1:
-            speed = np.hypot(np.diff(wx[top:imp_hi]), np.diff(y[top:imp_hi]))
-            impact = top + 1 + int(np.argmax(speed))
-        else:
-            impact = min(top + 1, n - 1)
+    # Impact ≈ the bottom of the swing arc: the lowest hand position (max y) in a
+    # bounded window just after the top. Bounding to ~0.5s keeps it from drifting
+    # into the follow-through (where the hands rise again), while still letting
+    # the hands fully descend — more robust than a first-crossing of address
+    # height, which can trip early during the transition.
+    imp_hi = min(n, top + int(track.fps * 0.5))
+    if imp_hi > top + 2:
+        impact = top + 2 + int(np.argmax(y[top + 2 : imp_hi]))
+    else:
+        impact = min(top + 1, n - 1)
 
     finish = min(n - 1, impact + int(track.fps * 1.0))
 
