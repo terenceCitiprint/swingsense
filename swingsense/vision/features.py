@@ -193,16 +193,25 @@ def compute_features(track: PoseTrack) -> SwingFeatures:
     metrics["hand_visibility"] = round(hand_vis, 2)
     metrics["core_visibility"] = round(core_vis, 2)
 
-    # Did the hands actually come back DOWN after the top? Compare how far they
-    # rose in the backswing to how far they descended into the detected impact.
-    # This is the robust test for "is there a real downswing in this clip?" — it
-    # catches both clips cut off at the top and tops mis-located by occlusion,
-    # independent of exactly which frame `top` landed on.
+    # Is there a real through-swing, or was the clip cut off at the top? Don't
+    # compare hand height to address — in a 2D face-on view posture changes
+    # (bent at address, taller through impact), so the hands need not return to
+    # address height even on a full swing. Instead read the SHAPE of the hand
+    # path after the top: a full swing descends to a low point (impact) and then
+    # the hands RISE AGAIN into the follow-through. A clip stopped at the top
+    # shows neither the descent nor that rebound.
     y = _smooth(wrist[:, 1])  # vertical hand path (same signal detect_events uses)
-    rise = float(y[a] - y[top])  # positive: hands went up
-    drop = float(y[imp] - y[top])  # positive: hands came back down
-    descends = rise > 0.05 and drop >= 0.4 * rise
-    downswing_captured = descends and downswing_f >= 5
+    drop = float(y[imp] - y[top])  # how far the hands descended after the top
+    fwin_hi = min(track.n_frames, imp + int(track.fps * 0.8))
+    recovery = (
+        float(y[imp] - np.min(y[imp:fwin_hi])) if fwin_hi > imp + 1 else 0.0
+    )  # how far the hands rose again after impact (the follow-through)
+    metrics["tempo"]["follow_through"] = round(recovery, 3)
+
+    # Only call it backswing-only when BOTH the descent and the rebound are
+    # essentially absent — conservative, so a real swing is never mislabelled.
+    backswing_only = recovery < 0.01 and drop < 0.03
+    downswing_captured = (not backswing_only) and downswing_f >= 5
     metrics["tempo"]["downswing_captured"] = downswing_captured
 
     # A real backswing takes time; a near-zero backswing means the top could not
@@ -225,16 +234,17 @@ def compute_features(track: PoseTrack) -> SwingFeatures:
                 "Reframe so the body fills more of the frame, against a plain "
                 "background, ideally at 120-240fps."
             )
-    elif not downswing_captured:
-        # Backswing/top are usable, but there is no measurable downswing.
+    elif backswing_only:
+        # Backswing/top are usable, but there is no measurable through-swing.
         confidence = "low"
         events["reliable"] = False
         events["captured"] = "backswing_only"
         notes.append(
-            "No full downswing was captured — the clip appears to stop at/near "
-            "the top of the backswing (the hands never descend back through the "
-            "ball). Backswing and top position are usable, but tempo and impact "
-            "cannot be measured. Record through to a full finish."
+            "No follow-through was captured — the clip appears to stop at/near "
+            "the top of the backswing (the hands neither descend through the "
+            "ball nor rebound into a finish). Backswing and top position are "
+            "usable, but tempo and impact cannot be measured. Record through to "
+            "a full finish."
         )
     elif hand_vis < 0.75 or core_vis < 0.8 or not metrics["tempo"]["reliable"]:
         # Downswing is captured, but hand tracking is only fair or the tempo
