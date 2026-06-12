@@ -39,6 +39,15 @@ detector's 'top', is actually the FOLLOW-THROUGH peak.
 | Mika  | 90 | **117** (apex 114-118) | **131** (ball gone 132) | 142 | 158 | ball strips + owner photo |
 | Trisha| 381 | ~418-420 | TBD | ~447 | — | peak=photo; ball position unresolved |
 | Terence June 2023 (DTL, terence_june192023.mp4) | 172 | 204 (zone 202-206) | **211** (ball gone 212, 16x ROI spike; yellow spare ball as control) | 230 | 244-256 held | full ball-anchored method, clean first pass |
+| Terence July 2023 (DTL, terence_july_1_2023.mp4) | 34 | 52 | **59** (ball present @59, gone @60) | 96 | 120 held | full swing — NOT a rehearsal (I first inverted it) |
+
+July correction: I first called the July clip a "backswing rehearsal, no
+impact." WRONG. It is a full swing; I read the FINISH (club held over the
+shoulder ~80-114) as a backswing top. The ball settled it: present through
+59, gone at 60 => impact = 59. RULE that prevents inversion: find IMPACT
+from the ball FIRST, then peak = the club extreme BEFORE it, follow = AFTER.
+Never label phases from body posture (impact posture mimics address; a held
+finish mimics a backswing top).
 
 Terence June notes: down-the-line view, 1080x1920@30. Tempo ~4:1
 (takeaway ~176 -> peak 204 -> impact 211). Finish held rock-still 244-256+.
