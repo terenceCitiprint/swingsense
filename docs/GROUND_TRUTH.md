@@ -38,6 +38,11 @@ detector's 'top', is actually the FOLLOW-THROUGH peak.
 |---|---|---|---|---|---|---|
 | Mika  | 90 | **117** (apex 114-118) | **131** (ball gone 132) | 142 | 158 | ball strips + owner photo |
 | Trisha| 381 | ~418-420 | TBD | ~447 | — | peak=photo; ball position unresolved |
+| Terence June 2023 (DTL, terence_june192023.mp4) | 172 | 204 (zone 202-206) | **211** (ball gone 212, 16x ROI spike; yellow spare ball as control) | 230 | 244-256 held | full ball-anchored method, clean first pass |
+
+Terence June notes: down-the-line view, 1080x1920@30. Tempo ~4:1
+(takeaway ~176 -> peak 204 -> impact 211). Finish held rock-still 244-256+.
+Best candidate clip for the first in-between (plane/force) analysis.
 
 LESSON: never trust a swing timeline until the BALL has been watched
 through it. Impact posture mimics address; follow-through mimics backswing.
