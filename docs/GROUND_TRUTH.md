@@ -25,12 +25,24 @@ signals finally matched the owner's reference images and method:
    as the ball vanishes. Mika: ROI flat through the downswing, spikes at frame
    150 -> impact = 149 (confidence 6.6x baseline). Implemented in vision/ball.py.
 
-### Owner-verified frames (corrected)
+### Owner-verified frames (corrected AGAIN — ball-anchored, final for Mika)
 
-| Clip | setup | PEAK back | impact | follow peak | source |
-|---|---|---|---|---|---|
-| Mika  | 130 | **140** | **149** | ~172 | peak=dist+photo, impact=ball-departure |
-| Trisha| 381 | ~418-420 | TBD | ~447 | peak=photo; ball auto-locate still wrong |
+The owner caught that the earlier 'peak 140' showed an already-gone ball.
+Zoomed ball-region strips settled the truth: ball on tee through 129,
+clubhead ON the ball at 131, ball gone at 132. The frame once labeled
+'setup 130' was the downswing's last instant (impact posture looks like
+address); 136-144 'backswing' was follow-through — frame 142, the old
+detector's 'top', is actually the FOLLOW-THROUGH peak.
+
+| Clip | setup | PEAK back | impact | follow peak | hold | source |
+|---|---|---|---|---|---|---|
+| Mika  | 90 | **117** (apex 114-118) | **131** (ball gone 132) | 142 | 158 | ball strips + owner photo |
+| Trisha| 381 | ~418-420 | TBD | ~447 | — | peak=photo; ball position unresolved |
+
+LESSON: never trust a swing timeline until the BALL has been watched
+through it. Impact posture mimics address; follow-through mimics backswing.
+The ball is the only unambiguous arbiter — it is present for every
+backswing frame and absent for every follow-through frame.
 
 Open: ball auto-locator picks the wrong blob on Trisha; her tee at (385,745)
 reads ambiguous (occlusion / wrong position). Follow-peak via club-distance is
