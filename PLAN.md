@@ -175,8 +175,12 @@ swingsense show <swing-id>
   log feels and get reasoned mechanical hypotheses. *Useful on day one, no CV yet.*
 - **Phase 1 — Video → motion.** MediaPipe pose extraction, frame/event detection
   (address, top, impact), overlay rendering so you can see the tracking.
-- **Phase 2 — Biomechanics features.** Kinematic sequence, X-factor, tempo,
-  rotation/sway, wrist proxies — the measured layer the engine reasons over.
+- **Phase 2 — Club tracking + deeper features.** PRIORITY: track the club shaft
+  (line detection anchored at the hands + temporal consistency). Real footage
+  proved the hands peak ~0.1-0.3s BEFORE the club finishes loading, so a
+  hands-only tracker cannot see the true top of the backswing — the club is the
+  second pendulum and carries the energy peak. Then: kinematic sequence,
+  X-factor, launch-monitor screen OCR.
 - **Phase 3 — Cross-reference engine.** Tie measured features + feel + KB into
   suggestions that cite their source and flag feel/real contradictions.
 - **Phase 4 — Quantitative physics.** Double-pendulum model, then inverse

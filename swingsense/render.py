@@ -71,7 +71,7 @@ def render_features(features: dict) -> None:
         if energy:
             t.add_row(
                 "Energy (pendulum)",
-                f"rise {energy.get('hand_rise')} · pause {energy.get('transition_pause_s')}s "
+                f"rise {energy.get('hand_rise')} · pause {energy.get('pause_at_top_s')}s "
                 f"· whip peak {energy.get('peak_hand_speed')}",
             )
         bal = metrics.get("finish_balance", {})

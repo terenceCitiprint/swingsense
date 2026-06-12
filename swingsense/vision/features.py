@@ -101,18 +101,42 @@ def detect_events(track: PoseTrack) -> dict:
     vy = np.gradient(y)  # vertical hand velocity (+ = descending)
     speed = np.hypot(np.gradient(x), vy)  # hand speed in the image plane
 
-    # --- Top: the literal height peak (maximum potential energy). ---
-    top = int(np.argmin(y))
+    # --- Top: the peak of the backswing. The hands reach max height first, but
+    # the CLUB (untracked second pendulum) keeps loading over the shoulder while
+    # the hands plateau — especially in slow, paused swings. The true peak
+    # (maximum stored energy, the moment before the human-led drop) is the END
+    # of that high plateau, not its first frame. So: find the hands' height
+    # peak, then extend forward through the plateau until sustained descent
+    # actually begins. ---
+    hands_peak = int(np.argmin(y))  # first moment the hands are highest
+    climb = float(
+        np.max(y[max(0, hands_peak - int(fps * 1.3)) : hands_peak + 1]) - y[hands_peak]
+    )
+    # The discriminator between "club still loading while the hands sag" and
+    # "the downswing has begun" is acceleration: the real drop is gravity+muscle
+    # and ramps up fast, while the loading sag is slow and steady. So scale the
+    # drop threshold to THIS swing's own peak descent speed.
+    drop_win = vy[hands_peak : min(n, hands_peak + int(fps * 1.2))]
+    vy_max = float(np.max(drop_win)) if len(drop_win) else 0.0
+    drop_thresh = max(0.25 * vy_max, 1e-4)
+    top = hands_peak
+    for j in range(hands_peak + 1, min(n - 1, hands_peak + int(fps * 0.8))):
+        if vy[j] > drop_thresh and vy[j + 1] > 0:  # the real drop has begun
+            break
+        if y[j] - y[hands_peak] > 0.35 * max(climb, 1e-6):  # already well below top
+            break
+        top = j
 
-    # --- Address: the last STILL frame before the climb to the top. Walk back
-    # from the top past the takeaway to where hand speed stays near zero. ---
+    # --- Address: the last STILL frame before the climb to the hands' peak.
+    # Anchor on hands_peak (the climb itself), not the extended top, so a long
+    # plateau at the top doesn't push the search window past the takeaway.
     # Bound the walk-back to ~1.3s so a long static setup or waggle is never
-    # counted as backswing time (a real backswing is ~0.7-1.1s).
+    # counted as backswing time (a real backswing climb is ~0.7-1.1s).
     still_thresh = max(float(np.percentile(speed, 25)), 1e-4)
-    addr_lo = max(0, top - int(fps * 1.3))
-    low_y = y[top] + 0.6 * (float(np.max(y[addr_lo : top + 1])) - y[top])
-    address = addr_lo + int(np.argmax(y[addr_lo:top])) if top > addr_lo else 0
-    for j in range(top - 1, addr_lo, -1):
+    addr_lo = max(0, hands_peak - int(fps * 1.3))
+    low_y = y[hands_peak] + 0.6 * (float(np.max(y[addr_lo : hands_peak + 1])) - y[hands_peak])
+    address = addr_lo + int(np.argmax(y[addr_lo:hands_peak])) if hands_peak > addr_lo else 0
+    for j in range(hands_peak - 1, addr_lo, -1):
         if speed[j] < still_thresh and y[j] > low_y:  # still AND hands down low
             address = j
             break
@@ -120,9 +144,8 @@ def detect_events(track: PoseTrack) -> dict:
     # --- Transition: first sustained descent after the top. The pendulum has
     # peaked; this is where the human initiates the drop. ---
     transition = top
-    desc_thresh = max(float(np.percentile(speed, 60)) * 0.3, 1e-4)
     for j in range(top, min(n - 2, top + int(fps * 0.6))):
-        if vy[j] > desc_thresh and vy[j + 1] > 0:
+        if vy[j] > drop_thresh and vy[j + 1] > 0:
             transition = j
             break
 
@@ -162,7 +185,11 @@ def detect_events(track: PoseTrack) -> dict:
     # late, so a height- or time-midpoint sits near address and looks like
     # nothing happened; two-thirds up reliably shows the club climbing, distinct
     # from both address and the top. ---
-    mid_bsw = address + int(round((top - address) * 0.66)) if top > address else top
+    mid_bsw = (
+        address + int(round((hands_peak - address) * 0.66))
+        if hands_peak > address
+        else top
+    )
 
     def t(i: int) -> float:
         return round(i / fps, 3)
@@ -170,6 +197,7 @@ def detect_events(track: PoseTrack) -> dict:
     return {
         "address": {"frame": int(address), "t": t(int(address))},
         "mid_backswing": {"frame": int(mid_bsw), "t": t(int(mid_bsw))},
+        "hands_peak": {"frame": int(hands_peak), "t": t(int(hands_peak))},
         "top": {"frame": top, "t": t(top)},
         "transition": {"frame": int(transition), "t": t(int(transition))},
         "impact": {"frame": int(impact), "t": t(int(impact))},
@@ -215,12 +243,13 @@ def compute_features(track: PoseTrack) -> SwingFeatures:
     y_e = _smooth(wrist_e[:, 1])
     x_e = _smooth(wrist_e[:, 0])
     speed_e = np.hypot(np.gradient(x_e), np.gradient(y_e)) * track.fps  # frame-norm/s
-    trans = events.get("transition", {}).get("frame", top)
+    hands_peak = events.get("hands_peak", {}).get("frame", top)
     metrics["energy"] = {
         # how high the hands climbed (normalized image units): PE proxy
-        "hand_rise": round(float(y_e[a] - y_e[top]), 3),
-        # pause between height peak and the start of the drop (the human trigger)
-        "transition_pause_s": round(max(trans - top, 0) / track.fps, 3),
+        "hand_rise": round(float(y_e[a] - y_e[hands_peak]), 3),
+        # the plateau at the top: hands reach peak height, then the club keeps
+        # loading while the hands hover — the pause before the human-led drop
+        "pause_at_top_s": round(max(top - hands_peak, 0) / track.fps, 3),
         # the whip: peak hand speed during the downswing, and where it peaked
         "peak_hand_speed": round(float(np.max(speed_e[top : imp + 1])) if imp > top else 0.0, 3),
         "downswing_avg_speed": round(float(np.mean(speed_e[top : imp + 1])) if imp > top else 0.0, 3),
@@ -263,6 +292,12 @@ def compute_features(track: PoseTrack) -> SwingFeatures:
     notes.append(
         "Shoulder/hip angles are 2D image-plane tilts, not true 3D turn; "
         "separation is an X-factor *proxy* only."
+    )
+    notes.append(
+        "'top' is the HANDS' peak. The club (untracked second pendulum) keeps "
+        "loading ~0.1-0.3s after the hands peak, so the club's true peak — the "
+        "real maximum of stored energy — occurs slightly later than this event. "
+        "Club tracking (Phase 2) will measure it directly."
     )
 
     # --- Head stability: how much the nose drifts during the swing. ---
