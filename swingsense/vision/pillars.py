@@ -1,17 +1,21 @@
-"""Pillar detection v3 — clubhead distance from the ball (owner's principle).
+"""Pillar detection v4 — pendulum arc angle with neighbor-verified extrema.
 
-The ball's position is where the clubhead rests at setup. Relative to that
-point, the clubhead's distance d(t) traces an M:
+Owner's coordinate system: the clubhead's position is measured as an ANGLE
+around the pendulum's pivot (mid-shoulders), relative to the club's angle at
+the starting position (club at the ball). That signed arc position psi(t):
 
-    ~0 (setup)  ->  MAX (peak backswing: the coil begins to reverse)
-                ->  ~0 (impact: club returns to the ball)
-                ->  MAX again (follow-through)
+    0 (setup) -> swings to an EXTREME (peak backswing: the coil reverses)
+              -> crosses ZERO exactly at impact (club back at the address angle)
+              -> continues to an opposite extreme (follow-through)
 
-Peak backswing = the clubhead's FARTHEST point from the ball, NOT its highest
-point — height fails when the follow-through wrap climbs above the real top.
-Impact is the deep minimum BETWEEN the two maxima, regardless of body position.
-The last valid M in the clip is the real swing (practice swings are followed by
-re-address; waggles never get far from the ball; celebration has no setup).
+Why this beats euclidean distance-from-ball: the club folding at the top
+shrinks its distance to the ball while the arc angle keeps growing, and the
+zero-crossing at impact stays razor sharp even when the strike frame itself is
+motion-blurred and interpolated.
+
+Owner's safeguard: every chosen pillar frame is verified against its
+neighbors (a peak must beat the frame before AND after) and hill-climbed
+until it does.
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ from __future__ import annotations
 import numpy as np
 
 from .club import ClubTrack, _interp_track
-from .pose import L_WRIST, R_WRIST, PoseTrack
+from .pose import L_SHOULDER, L_WRIST, R_SHOULDER, R_WRIST, PoseTrack
 
 
 def _smooth(x: np.ndarray, k: int = 5) -> np.ndarray:
@@ -45,8 +49,30 @@ def _stillness_periods(speed: np.ndarray, thresh: float, min_len: int):
     return out
 
 
+def _hill_climb(x: np.ndarray, i: int, lo: int, hi: int, mode: str) -> int:
+    """Owner's safeguard: a pillar must beat its neighbors. Move uphill (or
+    downhill for a minimum) until the frame is a true local extremum."""
+    sign = 1.0 if mode == "max" else -1.0
+    i = int(np.clip(i, lo, hi - 1))
+    while True:
+        cur = sign * x[i]
+        left = sign * x[i - 1] if i - 1 >= lo else -np.inf
+        right = sign * x[i + 1] if i + 1 < hi else -np.inf
+        if left <= cur and right <= cur:
+            return i
+        i = i - 1 if left > right else i + 1
+
+
+def arc_angle(pose: PoseTrack, club: ClubTrack) -> np.ndarray:
+    """Unwrapped clubhead angle (radians) around the mid-shoulder pivot."""
+    head = _interp_track(club)
+    pivot = pose.midpoint(L_SHOULDER, R_SHOULDER)[:, :2]
+    rel = head - pivot
+    phi = np.unwrap(np.arctan2(rel[:, 1], rel[:, 0]))
+    return _smooth(phi, 5)
+
+
 def detect_pillars(pose: PoseTrack, club: ClubTrack, debug: bool = False) -> dict | None:
-    """Locate the pillar frames from the clubhead's distance to the ball."""
     fps = pose.fps
     n = pose.n_frames
     wrist = pose.midpoint(L_WRIST, R_WRIST)
@@ -54,71 +80,87 @@ def detect_pillars(pose: PoseTrack, club: ClubTrack, debug: bool = False) -> dic
     speed = np.hypot(np.gradient(wx), np.gradient(wy)) * fps
     speed = np.where(pose.detected, speed, np.inf)  # frozen pose is not "still"
 
-    head = _interp_track(club)
+    phi = arc_angle(pose, club)
+    log: list[str] = []
     best = None
-    log = []
 
     for s_lo, s_hi in _stillness_periods(speed, 0.08, max(int(fps * 0.35), 3)):
-        # Ball = clubhead resting position over the stillness tail.
+        # Reference angle: the club at the ball during the setup stillness.
         win_lo = max(s_lo, s_hi - int(fps * 0.8))
         idx = [j for j in range(win_lo, s_hi + 1) if club.found[j]]
         if len(idx) < 2:
             log.append(f"still[{s_lo}-{s_hi}]: no club at rest")
             continue
         ball = np.median(club.head_xy[idx], axis=0)
-
-        # Distance-from-ball trace after this stillness.
         look_hi = min(n, s_hi + int(fps * 3.5))
+        head = _interp_track(club)
         d = np.linalg.norm(head[s_hi:look_hi] - ball, axis=1)
-        if len(d) < int(fps * 0.6):
+        m = len(d)
+        if m < int(fps * 0.6):
             log.append(f"still[{s_lo}-{s_hi}]: clip ends")
             continue
 
-        # Impact FIRST: the deep minimum flanked by two highs (the M's middle).
-        # The global max of d may be EITHER the top or the follow-through (the
-        # wrap can travel farther from the ball than the top), so anchoring on
-        # the valley between maxima is the only order that always works.
-        m = len(d)
-        pad = max(int(fps * 0.2), 3)
-        imp_rel, best_v = None, 0.0
+        # Impact = the valley where the club is back AT the ball, flanked on
+        # both sides by real swings away from it (backswing and follow-through)
+        # — and FAST. The clubhead peaks in speed through the ball; slow
+        # ball-adjacent valleys (lowering the club after the swing, waggles)
+        # are eliminated by speed weighting.
+        head_speed = np.hypot(*np.gradient(head[s_hi:look_hi], axis=0).T) * fps
+        sp_max = float(np.max(head_speed)) + 1e-6
+        pad = max(int(fps * 0.15), 2)
+        imp_rel, best_score = None, 0.0
         for t in range(pad, m - pad):
-            if d[t] > 0.16:  # the club must be essentially back AT the ball
+            if d[t] > 0.18:  # the club must be essentially back at the ball
                 continue
             before = float(np.max(d[:t]))
-            after = float(np.max(d[t:]))
-            v = min(before, after)
-            if before >= 0.22 and after >= 0.18 and v - d[t] > best_v:
-                imp_rel, best_v = t, v - d[t]
+            after = float(np.max(d[t : min(m, t + int(fps * 1.4))]))
+            if before < 0.25 or after < 0.18:
+                continue
+            score = (min(before, after) - d[t]) + 1.5 * head_speed[t] / sp_max
+            if score > best_score:
+                imp_rel, best_score = t, score
         if imp_rel is None:
             log.append(
-                f"still[{s_lo}-{s_hi}]: no ball-return flanked by two highs "
-                f"(max dist {float(np.max(d)):.2f})"
+                f"still[{s_lo}-{s_hi}]: no ball-return flanked by two arcs "
+                f"(max d {float(np.max(d)):.2f}, min d "
+                f"{float(np.min(d[pad:])):.2f})"
             )
             continue
-        d_imp = float(d[imp_rel])
 
-        # Peak backswing: farthest from the ball BEFORE impact (coil reversal).
-        top_rel = int(np.argmax(d[:imp_rel]))
-        d_top = float(d[top_rel])
-
-        # Follow-through peak: farthest from the ball after impact.
+        # Peak backswing = farthest BEFORE impact; follow-peak = after. Only
+        # trust OBSERVED clubhead positions for the peaks — interpolation
+        # through detection gaps can fabricate phantom maxima.
+        observed = club.found[s_hi:look_hi]
+        d_obs = np.where(observed, d, -np.inf)
+        if not np.any(observed[:imp_rel]):
+            log.append(f"still[{s_lo}-{s_hi}]: no observed club before impact")
+            continue
+        top_rel = int(np.argmax(d_obs[:imp_rel]))
         f_hi = min(m, imp_rel + int(fps * 1.4))
         fol_rel = (
-            imp_rel + int(np.argmax(d[imp_rel:f_hi])) if f_hi > imp_rel + 1 else imp_rel
+            imp_rel + int(np.argmax(d_obs[imp_rel:f_hi]))
+            if np.any(observed[imp_rel:f_hi])
+            else imp_rel + int(np.argmax(d[imp_rel:f_hi]))
         )
+
+        # Owner's safeguard: neighbor-verify each pillar, hill-climb to a true
+        # local extremum of the distance signal.
+        top_rel = _hill_climb(d, top_rel, 0, imp_rel, "max")
+        imp_rel = _hill_climb(d, imp_rel, top_rel + 1, f_hi, "min")
+        fol_rel = _hill_climb(d, fol_rel, imp_rel + 1, m, "max")
 
         best = {
             "setup": max(s_lo, s_hi - 4),
             "top": s_hi + top_rel,
             "impact": s_hi + imp_rel,
             "follow_peak": s_hi + fol_rel,
-            "ball": ball,
-            "d_top": d_top,
-            "d_imp": d_imp,
+            "d_top": float(d[top_rel]),
+            "d_imp": float(d[imp_rel]),
         }
         log.append(
             f"still[{s_lo}-{s_hi}]: VALID top=+{top_rel} imp=+{imp_rel} "
-            f"(d {d_top:.2f}->{d_imp:.2f})"
+            f"fol=+{fol_rel} (d {d[top_rel]:.2f} -> {d[imp_rel]:.2f} -> "
+            f"{d[fol_rel]:.2f})"
         )
 
     if debug:
@@ -127,7 +169,6 @@ def detect_pillars(pose: PoseTrack, club: ClubTrack, debug: bool = False) -> dic
     if best is None:
         return None
 
-    # Balance: where motion settles after the follow-through peak.
     follow = best["follow_peak"]
     finish = min(n - 1, follow + int(fps * 0.4))
     for j in range(follow, n - 3):
@@ -144,7 +185,6 @@ def detect_pillars(pose: PoseTrack, club: ClubTrack, debug: bool = False) -> dic
         "impact": {"frame": int(best["impact"]), "t": t(best["impact"])},
         "follow_peak": {"frame": int(follow), "t": t(follow)},
         "finish": {"frame": int(finish), "t": t(finish)},
-        "ball": [round(float(best["ball"][0]), 3), round(float(best["ball"][1]), 3)],
         "quality": {
             "d_top": round(best["d_top"], 2),
             "d_impact": round(best["d_imp"], 2),

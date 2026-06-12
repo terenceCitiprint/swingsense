@@ -75,7 +75,7 @@ def _detect_shaft_in_frame(
             edges = cv2.Canny(roi, 40, 120)
         else:
             diff = cv2.GaussianBlur(diff, (3, 3), 0)
-            edges = cv2.Canny(diff, 15, 60)
+            edges = cv2.Canny(diff, 10, 50)  # blur streaks are low-contrast
     else:
         edges = cv2.Canny(roi, 40, 120)
     # Keep the length gate permissive: Hough fragments the shaft (especially
@@ -86,16 +86,21 @@ def _detect_shaft_in_frame(
         edges,
         rho=1,
         theta=np.pi / 180,
-        threshold=20,
+        threshold=18,
         minLineLength=min_len,
-        maxLineGap=8,
+        maxLineGap=12,  # blur fattens/fragments the shaft; bridge bigger gaps
     )
     if lines is None:
         return None
 
     grip_local = np.array([gx - x0, gy - y0])
-    # Generous: pose wrists wander when the hands are overhead/occluded.
-    near_r = 0.9 * body_scale  # one endpoint must be near the hands
+    # Two-part anchor test: the shaft's LINE must pass near the hands (the
+    # detected fragment may be anywhere along the shaft — including the far
+    # half near the head — so endpoint-near-grip alone throws away good
+    # fragments high in the backswing), and the nearest endpoint must still be
+    # within a generous radius so unrelated background lines don't qualify.
+    near_r = 1.6 * body_scale
+    line_tol = 0.35 * body_scale
     best = None
     best_score = -1.0
     for x1l, y1l, x2l, y2l in lines[:, 0]:
@@ -106,11 +111,21 @@ def _detect_shaft_in_frame(
         d_near = min(d1, d2)
         if d_near > near_r:
             continue
-        seg_len = float(np.linalg.norm(p2 - p1))
+        seg = p2 - p1
+        seg_len = float(np.linalg.norm(seg))
+        if seg_len < 1e-6:
+            continue
+        # perpendicular distance from the grip to the segment's infinite line
+        d_line = float(
+            abs(seg[0] * (grip_local[1] - p1[1]) - seg[1] * (grip_local[0] - p1[0]))
+            / seg_len
+        )
+        if d_line > line_tol:
+            continue
         ang = float(np.degrees(np.arctan2(far[1] - near[1], far[0] - near[0])))
-        # Score: long segments anchored close to the hands, consistent with the
-        # previous frame's shaft direction when we have one.
-        score = seg_len - 0.8 * d_near
+        # Score: long segments whose line passes close to the hands, consistent
+        # with the previous frame's shaft direction when we have one.
+        score = seg_len - 0.6 * d_near - 1.5 * d_line
         if prev_angle is not None:
             dang = abs((ang - prev_angle + 180) % 360 - 180)
             score -= 0.6 * dang
