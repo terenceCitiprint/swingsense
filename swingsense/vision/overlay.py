@@ -6,6 +6,8 @@ draw the BlazePose connections ourselves with OpenCV.
 
 from __future__ import annotations
 
+import numpy as np
+
 from .pose import PoseTrack
 
 # A readable subset of the 33-point BlazePose skeleton (arms, torso, legs).
@@ -33,30 +35,58 @@ def draw_skeleton(frame, row, width: int, height: int):
 
 
 def event_montage(track: PoseTrack, video_path: str, events: dict, out_path: str):
-    """Write a side-by-side image of the skeleton at address/top/impact/finish."""
+    """Write a 6-panel storyboard of the swing.
+
+    Frame selection is anchored on the three most reliably-detected positions —
+    peak backswing, impact, and finish — and the in-between panels are derived
+    from them so the whole swing is represented. This deliberately avoids the
+    failure mode where the panels bunch up in the through-swing (top and
+    transition one frame apart, impact/follow/finish clustered) and the
+    backswing is never actually shown.
+    """
     import cv2
+
+    a = events.get("address", {}).get("frame", 0)
+    top = events.get("top", {}).get("frame", 0)
+    imp = events.get("impact", {}).get("frame", top)
+    fin = events.get("finish", {}).get("frame", imp)
+
+    if events.get("captured") == "backswing_only":
+        # Only the backswing exists — spread the panels across it so the climb
+        # to the top is fully shown, rather than padding with bogus through-swing.
+        pts = np.linspace(a, top, 6).astype(int)
+        plan = list(
+            zip(
+                pts,
+                ["address", "takeaway", "early-bsw", "mid-bsw", "late-bsw", "top (peak)"],
+            )
+        )
+    else:
+        # Anchors: top (peak backswing), impact, finish. Derived: a mid-backswing
+        # frame (so the climb is visible) and a mid-follow-through frame.
+        mid_bsw = events.get("mid_backswing", {}).get("frame", (a + top) // 2)
+        mid_fol = (imp + fin) // 2
+        plan = [
+            (a, "address"),
+            (mid_bsw, "mid-backswing"),
+            (top, "top (peak)"),
+            (imp, "impact"),
+            (mid_fol, "follow-through"),
+            (fin, "finish"),
+        ]
 
     panels = []
     cap = cv2.VideoCapture(video_path)
-    for name in (
-        "address",
-        "top",
-        "transition",
-        "impact",
-        "follow_through",
-        "finish",
-    ):
-        ev = events.get(name)
-        if not isinstance(ev, dict):
-            continue
-        fr_idx = ev["frame"]
+    for fr_idx, label in plan:
+        fr_idx = int(max(0, min(track.n_frames - 1, fr_idx)))
         cap.set(cv2.CAP_PROP_POS_FRAMES, fr_idx)
         ok, frame = cap.read()
         if not ok:
             continue
         draw_skeleton(frame, track.landmarks[fr_idx], track.width, track.height)
         cv2.putText(
-            frame, name, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2
+            frame, f"{label} ({fr_idx})", (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2,
         )
         panels.append(cv2.resize(frame, (240, 426)))
     cap.release()

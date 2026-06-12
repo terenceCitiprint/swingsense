@@ -157,11 +157,19 @@ def detect_events(track: PoseTrack) -> dict:
             finish = j
             break
 
+    # --- Mid-backswing: a LATE-backswing frame (~2/3 of the way to the top by
+    # time). In a face-on view the hands barely rise until the club hinges up
+    # late, so a height- or time-midpoint sits near address and looks like
+    # nothing happened; two-thirds up reliably shows the club climbing, distinct
+    # from both address and the top. ---
+    mid_bsw = address + int(round((top - address) * 0.66)) if top > address else top
+
     def t(i: int) -> float:
         return round(i / fps, 3)
 
     return {
         "address": {"frame": int(address), "t": t(int(address))},
+        "mid_backswing": {"frame": int(mid_bsw), "t": t(int(mid_bsw))},
         "top": {"frame": top, "t": t(top)},
         "transition": {"frame": int(transition), "t": t(int(transition))},
         "impact": {"frame": int(impact), "t": t(int(impact))},
