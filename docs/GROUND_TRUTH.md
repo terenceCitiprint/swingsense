@@ -86,3 +86,4 @@ tracking through the backswing-against-net.
 - Outdoor: plausible but unverified vs the owner-confirmed pose storyboard
 - Trisha: ❌ picks waggle V at 378 (truth ~430)
 - Mika: ❌ no valid candidate in window (downswing blur) — pose fallback
+| VID20230402WA0009 (DTL, v9.mp4) 480x848@30 | 115 | 170 (top, recording ends ~204) | NONE — recording cut at top, ball still present (188) at last frame | n/a | n/a | real swing, video truncated at top (not a rehearsal); waggle spike at 19-23 |
