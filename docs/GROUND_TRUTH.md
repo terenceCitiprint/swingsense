@@ -40,6 +40,7 @@ detector's 'top', is actually the FOLLOW-THROUGH peak.
 | Trisha| 381 | ~418-420 | TBD | ~447 | — | peak=photo; ball position unresolved |
 | Terence June 2023 (DTL, terence_june192023.mp4) | 172 | 204 (zone 202-206) | **211** (ball gone 212, 16x ROI spike; yellow spare ball as control) | 230 | 244-256 held | full ball-anchored method, clean first pass |
 | Terence July 2023 (DTL, terence_july_1_2023.mp4) | 34 | 52 | **59** (ball present @59, gone @60) | 96 | 120 held | full swing — NOT a rehearsal (I first inverted it) |
+| Terence March 2023 (DTL, terence_march_2023.mp4) | 60 | 85 | **98** (ball gone @99; clubhead contacts @98) | 115 | 140 held | ball-first method; finish 108-148 again mimicked a backswing top |
 
 July correction: I first called the July clip a "backswing rehearsal, no
 impact." WRONG. It is a full swing; I read the FINISH (club held over the
