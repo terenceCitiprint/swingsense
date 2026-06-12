@@ -35,7 +35,14 @@ def render_features(features: dict) -> None:
         t.add_column("Event", style="bold")
         t.add_column("Frame")
         t.add_column("Time (s)")
-        for name in ("address", "top", "impact", "finish"):
+        for name in (
+            "address",
+            "top",
+            "transition",
+            "impact",
+            "follow_through",
+            "finish",
+        ):
             ev = events.get(name)
             if isinstance(ev, dict):
                 t.add_row(name, str(ev.get("frame", "")), str(ev.get("t", "")))
@@ -60,6 +67,21 @@ def render_features(features: dict) -> None:
                 t.add_row(
                     f"Separation @ {label}", f"{r.get('separation_deg')}° (proxy)"
                 )
+        energy = metrics.get("energy", {})
+        if energy:
+            t.add_row(
+                "Energy (pendulum)",
+                f"rise {energy.get('hand_rise')} · pause {energy.get('transition_pause_s')}s "
+                f"· whip peak {energy.get('peak_hand_speed')}",
+            )
+        bal = metrics.get("finish_balance", {})
+        if bal.get("held_still") is not None:
+            held = "[green]held still[/green]" if bal["held_still"] else "[yellow]moved[/yellow]"
+            t.add_row(
+                "Finish balance",
+                f"{held} over {bal.get('hold_window_s')}s "
+                f"(ankle drift {bal.get('ankle_drift_pct')}%)",
+            )
         if "hand_visibility" in metrics:
             t.add_row("Hand tracking", f"{metrics['hand_visibility']} (0-1)")
         console.print(t)

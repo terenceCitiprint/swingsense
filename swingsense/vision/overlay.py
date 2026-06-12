@@ -37,15 +37,21 @@ def event_montage(track: PoseTrack, video_path: str, events: dict, out_path: str
     import cv2
 
     panels = []
-    for name in ("address", "top", "impact", "finish"):
+    cap = cv2.VideoCapture(video_path)
+    for name in (
+        "address",
+        "top",
+        "transition",
+        "impact",
+        "follow_through",
+        "finish",
+    ):
         ev = events.get(name)
         if not isinstance(ev, dict):
             continue
         fr_idx = ev["frame"]
-        cap = cv2.VideoCapture(video_path)
         cap.set(cv2.CAP_PROP_POS_FRAMES, fr_idx)
         ok, frame = cap.read()
-        cap.release()
         if not ok:
             continue
         draw_skeleton(frame, track.landmarks[fr_idx], track.width, track.height)
@@ -53,6 +59,7 @@ def event_montage(track: PoseTrack, video_path: str, events: dict, out_path: str
             frame, name, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2
         )
         panels.append(cv2.resize(frame, (240, 426)))
+    cap.release()
     if panels:
         cv2.imwrite(out_path, cv2.hconcat(panels))
     return out_path

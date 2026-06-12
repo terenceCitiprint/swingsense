@@ -16,10 +16,12 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .pose import (
+    L_ANKLE,
     L_HIP,
     L_SHOULDER,
     L_WRIST,
     NOSE,
+    R_ANKLE,
     R_HIP,
     R_SHOULDER,
     R_WRIST,
@@ -74,47 +76,97 @@ def _smooth(x: np.ndarray, k: int = 5) -> np.ndarray:
 
 
 def detect_events(track: PoseTrack) -> dict:
-    """Locate address, top of backswing, and impact from the hand-path trace.
+    """Locate swing events from the energy profile of the hand path.
 
-    Strategy: the wrists trace a big vertical arc. The top of the backswing is
-    the highest hand position (min y). Address is the lowest stable hand
-    position before that; impact is the lowest hand position just after it
-    (before the hands rise again into the finish).
+    Physical model: the swing is a pendulum. The hands climb to a literal
+    height peak (maximum potential energy) at the top of the backswing; a
+    human-led transition then releases that energy downward — gravity plus
+    sequencing whip the club through impact — and the hands rise again into a
+    follow-through, settling into a held finish.
+
+    So the events are read from physics signals, not positional guesses:
+      address     last stillness before the hands start climbing
+      top         the literal height peak of the hand path (PE maximum)
+      transition  where sustained downward hand velocity begins after the top
+      impact      peak hand SPEED near the bottom of the arc (the whip)
+      follow_through  where the hands rise back above mid-height after impact
+      finish      where motion settles and stays settled (the held pose)
     """
     wrist = track.midpoint(L_WRIST, R_WRIST)
-    y = _smooth(wrist[:, 1])  # vertical hand path
+    y = _smooth(wrist[:, 1])  # vertical hand path (y DOWN: smaller = higher)
+    x = _smooth(wrist[:, 0])
     n = len(y)
+    fps = track.fps
 
-    # Top of backswing = highest hands overall (smallest y).
+    vy = np.gradient(y)  # vertical hand velocity (+ = descending)
+    speed = np.hypot(np.gradient(x), vy)  # hand speed in the image plane
+
+    # --- Top: the literal height peak (maximum potential energy). ---
     top = int(np.argmin(y))
 
-    # Takeaway/address: lowest hands (largest y) shortly before the top. Keep the
-    # window tight (~1.2s) so a long static setup or waggle isn't counted as
-    # backswing time and doesn't inflate the tempo ratio.
-    addr_lo = max(0, top - int(track.fps * 1.2))
+    # --- Address: the last STILL frame before the climb to the top. Walk back
+    # from the top past the takeaway to where hand speed stays near zero. ---
+    # Bound the walk-back to ~1.3s so a long static setup or waggle is never
+    # counted as backswing time (a real backswing is ~0.7-1.1s).
+    still_thresh = max(float(np.percentile(speed, 25)), 1e-4)
+    addr_lo = max(0, top - int(fps * 1.3))
+    low_y = y[top] + 0.6 * (float(np.max(y[addr_lo : top + 1])) - y[top])
     address = addr_lo + int(np.argmax(y[addr_lo:top])) if top > addr_lo else 0
+    for j in range(top - 1, addr_lo, -1):
+        if speed[j] < still_thresh and y[j] > low_y:  # still AND hands down low
+            address = j
+            break
 
-    # Impact ≈ the bottom of the swing arc: the lowest hand position (max y) in a
-    # bounded window just after the top. Bounding to ~0.5s keeps it from drifting
-    # into the follow-through (where the hands rise again), while still letting
-    # the hands fully descend — more robust than a first-crossing of address
-    # height, which can trip early during the transition.
-    imp_hi = min(n, top + int(track.fps * 0.5))
-    if imp_hi > top + 2:
-        impact = top + 2 + int(np.argmax(y[top + 2 : imp_hi]))
+    # --- Transition: first sustained descent after the top. The pendulum has
+    # peaked; this is where the human initiates the drop. ---
+    transition = top
+    desc_thresh = max(float(np.percentile(speed, 60)) * 0.3, 1e-4)
+    for j in range(top, min(n - 2, top + int(fps * 0.6))):
+        if vy[j] > desc_thresh and vy[j + 1] > 0:
+            transition = j
+            break
+
+    # --- Impact: the bottom of the pendulum's arc — the lowest hand position in
+    # the descent window after the transition. (At 30fps the hand-speed peak
+    # smears into the transition, so the positional bottom-of-arc is the more
+    # reliable strike cue; the whip itself is reported as a separate energy
+    # metric measured across the descent.) ---
+    imp_hi = min(n, top + int(fps * 0.6))
+    if imp_hi > transition + 2:
+        impact = transition + 2 + int(np.argmax(y[transition + 2 : imp_hi]))
     else:
         impact = min(top + 1, n - 1)
 
-    finish = min(n - 1, impact + int(track.fps * 1.0))
+    # --- Follow-through: after impact the hands swing up and around; mark where
+    # they rise back above the midpoint between impact height and top height. ---
+    follow = impact
+    mid_y = (y[impact] + y[top]) / 2.0
+    for j in range(impact, min(n, impact + int(fps * 1.0))):
+        if y[j] < mid_y:
+            follow = j
+            break
+
+    # --- Finish: the FIRST settling after the follow-through — the held golf
+    # finish, before the golfer relaxes out of the pose. Use a short stillness
+    # window (~0.15s): golfers may hold the finish only briefly, and a longer
+    # requirement skips past the pose to the relaxed stance after it. ---
+    finish = min(n - 1, impact + int(fps * 1.2))
+    hold_f = max(int(fps * 0.15), 2)
+    for j in range(follow + 1, n - hold_f):
+        if np.all(speed[j : j + hold_f] < still_thresh * 2):
+            finish = j
+            break
 
     def t(i: int) -> float:
-        return round(i / track.fps, 3)
+        return round(i / fps, 3)
 
     return {
-        "address": {"frame": address, "t": t(address)},
+        "address": {"frame": int(address), "t": t(int(address))},
         "top": {"frame": top, "t": t(top)},
-        "impact": {"frame": impact, "t": t(impact)},
-        "finish": {"frame": finish, "t": t(finish)},
+        "transition": {"frame": int(transition), "t": t(int(transition))},
+        "impact": {"frame": int(impact), "t": t(int(impact))},
+        "follow_through": {"frame": int(follow), "t": t(int(follow))},
+        "finish": {"frame": int(finish), "t": t(int(finish))},
     }
 
 
@@ -146,6 +198,47 @@ def compute_features(track: PoseTrack) -> SwingFeatures:
             f"Downswing spans only {downswing_f} frames at {track.fps:.0f}fps "
             f"(ratio {ratio:.1f}:1) — impact/tempo are below this camera's time "
             "resolution. Treat tempo as approximate; 120-240fps would fix this."
+        )
+
+    # --- Energy profile: the pendulum view of the swing. Hand rise to the top
+    # is the potential-energy proxy; the transition pause is the human-led
+    # release point; peak hand speed into impact is the whip. ---
+    wrist_e = track.midpoint(L_WRIST, R_WRIST)
+    y_e = _smooth(wrist_e[:, 1])
+    x_e = _smooth(wrist_e[:, 0])
+    speed_e = np.hypot(np.gradient(x_e), np.gradient(y_e)) * track.fps  # frame-norm/s
+    trans = events.get("transition", {}).get("frame", top)
+    metrics["energy"] = {
+        # how high the hands climbed (normalized image units): PE proxy
+        "hand_rise": round(float(y_e[a] - y_e[top]), 3),
+        # pause between height peak and the start of the drop (the human trigger)
+        "transition_pause_s": round(max(trans - top, 0) / track.fps, 3),
+        # the whip: peak hand speed during the downswing, and where it peaked
+        "peak_hand_speed": round(float(np.max(speed_e[top : imp + 1])) if imp > top else 0.0, 3),
+        "downswing_avg_speed": round(float(np.mean(speed_e[top : imp + 1])) if imp > top else 0.0, 3),
+    }
+
+    # --- Finish balance: did the golfer settle into a held, stable finish? Track
+    # ankle + hip stillness in the window after the finish event. ---
+    fin = events.get("finish", {}).get("frame", imp)
+    bal_hi = min(track.n_frames, fin + int(track.fps * 1.0))
+    if bal_hi > fin + 3:
+        ankles = track.midpoint(L_ANKLE, R_ANKLE)[fin:bal_hi]
+        hips = track.midpoint(L_HIP, R_HIP)[fin:bal_hi]
+        ankle_drift = float(np.ptp(ankles[:, 0]) + np.ptp(ankles[:, 1]))
+        hip_drift = float(np.ptp(hips[:, 0]) + np.ptp(hips[:, 1]))
+        held = ankle_drift < 0.02 and hip_drift < 0.03
+        metrics["finish_balance"] = {
+            "hold_window_s": round((bal_hi - fin) / track.fps, 2),
+            "ankle_drift_pct": round(ankle_drift * 100, 1),
+            "hip_drift_pct": round(hip_drift * 100, 1),
+            "held_still": bool(held),
+        }
+    else:
+        metrics["finish_balance"] = {"held_still": None}
+        notes.append(
+            "Clip ends right at the finish — cannot judge whether the finish "
+            "was held/balanced. Keep recording ~1s after the swing ends."
         )
 
     # --- Rotation proxies: shoulder & hip line angles at each event. ---

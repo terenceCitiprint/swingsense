@@ -30,6 +30,24 @@ entries:
     source: General biomechanics (X-factor literature)
     tags: [rotation, separation, power, transition]
 
+  - id: pendulum_energy
+    name: Pendulum energy model (peak, transition, whip)
+    summary: >
+      The swing is a pendulum: the hands/club climb to a literal height peak
+      (maximum potential energy), a human-led transition releases the drop, and
+      gravity plus sequencing whip the club through impact.
+    details: >
+      The top of the backswing is an energy event, not just a position — it is
+      where stored potential energy is maximal. The transition (the human
+      trigger) determines how that energy converts to speed: a rushed or
+      arms-first release bleeds the whip; a sequenced drop lets gravity act as
+      an accelerant before the wrists release. Peak hand/club speed should
+      arrive at the ball, not before it. A held, balanced finish is the
+      signature that energy was delivered through the ball rather than fought
+      against — important to many golfers as a swing-quality proxy.
+    source: Owner's model (user-specified), consistent with pendulum mechanics
+    tags: [pendulum, energy, transition, whip, gravity, finish, balance]
+
   - id: double_pendulum
     name: Double-pendulum lag and release
     summary: >
