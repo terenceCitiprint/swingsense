@@ -68,8 +68,14 @@ def _detect_shaft_in_frame(
 
     if prev_gray is not None:
         diff = cv2.absdiff(roi, prev_gray[y0:y1, x0:x1])
-        diff = cv2.GaussianBlur(diff, (3, 3), 0)
-        edges = cv2.Canny(diff, 15, 60)
+        if float(diff.mean()) < 2.0:
+            # Still frame (e.g. address): nothing moves, so motion edges see
+            # nothing — but the resting shaft is high-contrast. Use static
+            # edges here; the grip-anchor and scoring still constrain them.
+            edges = cv2.Canny(roi, 40, 120)
+        else:
+            diff = cv2.GaussianBlur(diff, (3, 3), 0)
+            edges = cv2.Canny(diff, 15, 60)
     else:
         edges = cv2.Canny(roi, 40, 120)
     # Keep the length gate permissive: Hough fragments the shaft (especially

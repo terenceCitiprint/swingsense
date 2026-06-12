@@ -111,19 +111,17 @@ def pillar_montage(track: PoseTrack, video_path: str, events: dict, out_path: st
 
     fps = track.fps
     a = events.get("address", {}).get("frame", 0)
+    setup = events.get("setup", {}).get("frame", a - 4)  # one still, ~4 before movement
     top = events.get("top", {}).get("frame", 0)
     imp = events.get("impact", {}).get("frame", top)
-    fol = events.get("follow_through", {}).get("frame", imp)
+    fol = events.get("follow_through", events.get("follow_peak", {})).get("frame", imp)
     fin = events.get("finish", {}).get("frame", fol)
 
-    pre_gap = max(int(fps * 0.12), 2)  # spacing of the pre-movement frames
     bal_gap = max(int(fps * 0.35), 3)  # spacing of the balance-check frames
     plan = [
-        (a - 2 * pre_gap, "pre-move 1"),
-        (a - pre_gap, "pre-move 2"),
-        (a, "pre-move 3 (last still)"),
+        (setup, "SETUP (still)"),
         (top, "TOP of backswing"),
-        (imp, "IMPACT"),
+        (imp, "IMPACT (club at ball)"),
         (fol, "FOLLOW-THROUGH peak"),
         (fin + bal_gap, "balance +1"),
         (fin + 2 * bal_gap, "balance +2"),
