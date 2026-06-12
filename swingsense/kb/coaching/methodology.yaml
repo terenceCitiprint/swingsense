@@ -1,0 +1,23 @@
+# The owner's analysis protocol. The engine should follow this order and never
+# reason about in-between frames until the pillars are trusted.
+
+entries:
+  - id: pillar_protocol
+    name: Six-pillar frame analysis
+    summary: >
+      Analyze a swing from six pillar stills, in order: (1) three frames just
+      before movement starts, tracking the club head from rest; (2) top of the
+      backswing (the club's peak, not the hands'); (3) impact; (4) peak of the
+      follow-through; (5) a few frames after, to check the player's balance.
+      In-between frames are derived from the pillars and only analyzed once the
+      pillars are verified — wrong pillars poison everything downstream.
+    details: >
+      The pillars are energy landmarks of the pendulum: rest (zero energy),
+      peak potential (top), maximum delivery (impact), residual energy exit
+      (follow-through peak), and recovery of stillness (balance). Forces that
+      cause inefficiency live BETWEEN pillars (e.g. early release between top
+      and impact), so each in-between analysis is anchored to its two
+      surrounding pillars. Balance at the finish matters to some golfers and is
+      a pillar-level check, not an afterthought.
+    source: Owner's protocol
+    tags: [methodology, pillars, sequence, balance, analysis]

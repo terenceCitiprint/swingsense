@@ -190,6 +190,51 @@ def _interp_track(club: ClubTrack) -> np.ndarray:
     return out
 
 
+def impact_shaft_lean(
+    club: ClubTrack, pose: PoseTrack, impact: int
+) -> dict | None:
+    """Measure shaft lean at the impact pillar (face-on view).
+
+    Efficient impact: hands AHEAD of the clubhead toward the target (forward
+    shaft lean) — the release isn't spent, the head is still accelerating, and
+    the contact force aligns with the ball's trajectory (see KB:
+    shaft_lean_impact). Positive lean = hands lead; negative = clubhead has
+    passed the hands (flip/early release).
+
+    Target direction is inferred from the clubhead's horizontal motion just
+    after impact. Uses the nearest frame to `impact` with a club detection.
+    """
+    from .pose import L_WRIST, R_WRIST
+
+    n = len(club.found)
+    # Read lean strictly BEFORE the strike: at/after contact the clubhead
+    # passes the hands naturally, so a post-impact frame always reads "flip"
+    # regardless of how good the impact actually was. Use the last detection
+    # in the few frames leading into impact.
+    cands = [j for j in range(max(0, impact - 4), max(1, impact)) if club.found[j]]
+    if not cands:
+        return None
+    j = max(cands)
+
+    head = _interp_track(club)
+    lo, hi = max(0, impact - 2), min(n - 1, impact + 3)
+    dx = head[hi, 0] - head[lo, 0]
+    if abs(dx) < 1e-4:
+        return None
+    target_sign = 1.0 if dx > 0 else -1.0
+
+    grip_x = float(pose.midpoint(L_WRIST, R_WRIST)[j, 0])
+    lean_raw = (grip_x - float(head[j, 0])) * target_sign
+    # normalize by shaft horizontal extent so the number is camera-independent
+    shaft_dx = abs(grip_x - float(head[j, 0])) + 1e-6
+    return {
+        "frame_used": int(j),
+        "hands_lead": bool(lean_raw > 0),
+        "lean_norm": round(float(lean_raw / shaft_dx), 2),  # +1 lead .. -1 flip
+        "lean_raw": round(float(lean_raw), 3),
+    }
+
+
 def club_events(
     club: ClubTrack, fps: float, window: tuple[int, int] | None = None
 ) -> dict | None:

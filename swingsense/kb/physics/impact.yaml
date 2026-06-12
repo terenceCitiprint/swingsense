@@ -1,0 +1,61 @@
+# Impact-efficiency physics, from first principles (owner-directed).
+# Source images: professional vs amateur impact comparison — pro has hands
+# ahead of the clubhead with the shaft leaning toward the target; amateur has
+# the shaft leaning away with the clubhead passing the hands before the ball.
+
+entries:
+  - id: shaft_lean_impact
+    name: Forward shaft lean at impact (hands lead the clubhead)
+    summary: >
+      Efficient impact has the hands AHEAD of the clubhead, shaft leaning toward
+      the target. The second pendulum (club) has not yet spent its release, so
+      the clubhead is still accelerating INTO the ball and the force vector
+      points along the intended ball trajectory.
+    details: >
+      F = m·a at the moment of contact: the ball receives force proportional to
+      the clubhead's acceleration through it. With hands leading, the angular
+      release is still in progress — the head is accelerating at contact and
+      the contact force aligns with the target line (and compresses the ball,
+      delofting slightly). The amateur pattern (early release / "casting" /
+      "flip") spends the wrist lever before the ball: the clubhead overtakes
+      the hands, is DECELERATING at contact, and the force vector tilts upward
+      and across — less force toward the trajectory, added loft, weak strikes.
+      Visually measurable from face-on video as the shaft angle at the impact
+      pillar frame.
+    source: Owner's model + classical mechanics (F=ma, double-pendulum release)
+    tags: [impact, shaft-lean, release, lag, force, compression]
+
+  - id: arc_acceleration
+    name: Arc beats straight line (rotational speed multiplication)
+    summary: >
+      A clubhead swung on an arc reaches far higher speed than hands moving on
+      a line: tangential speed is v = ω·r, so angular rotation multiplies hand
+      motion by the radius of the lever.
+    details: >
+      The body cannot translate the hands fast enough to matter; it can ROTATE
+      fast. Rotation converts modest body speed into extreme clubhead speed via
+      the lever (v = ω·r), and centripetal acceleration (a = v²/r) at the
+      bottom of the arc is enormous — this is what unhinges the wrists
+      passively (the whip). Swings that "push" the club on a straight line
+      toward the ball throw away the multiplier: same muscular effort, a
+      fraction of the head speed. Efficiency = keeping the motion rotational
+      and letting the radius lengthen at the right moment (release), not
+      muscling the club along the target line.
+    source: Owner's model + classical mechanics (circular motion)
+    tags: [arc, rotation, radius, whip, speed, centripetal]
+
+  - id: accelerate_through_ball
+    name: Peak speed AT the ball, not before it
+    summary: >
+      The clubhead should reach maximum speed at (or fractionally after) the
+      ball. Releasing early moves the speed peak BEFORE impact, so the ball is
+      struck by a decelerating clubhead.
+    details: >
+      Same F = m·a logic applied in time: where the speed peak lands in the
+      swing decides whether contact happens during acceleration or
+      deceleration. The pillar frames bracket this — a measured speed peak
+      between the top and impact pillars that dies before the ball indicates
+      early release; a peak arriving at the impact pillar indicates an
+      efficient, late release.
+    source: Owner's model + classical mechanics
+    tags: [impact, timing, release, acceleration, speed-peak]

@@ -95,6 +95,60 @@ def event_montage(track: PoseTrack, video_path: str, events: dict, out_path: str
     return out_path
 
 
+def pillar_montage(track: PoseTrack, video_path: str, events: dict, out_path: str):
+    """The owner's pillar protocol, as one stitch:
+
+      1. three frames just before movement starts (club head at rest)
+      2. top of the backswing
+      3. impact
+      4. peak of the follow-through
+      5. two frames after, to check the player's balance
+
+    These pillars are the foundation; in-between frames are only analyzed once
+    the pillars are verified. 8 panels total.
+    """
+    import cv2
+
+    fps = track.fps
+    a = events.get("address", {}).get("frame", 0)
+    top = events.get("top", {}).get("frame", 0)
+    imp = events.get("impact", {}).get("frame", top)
+    fol = events.get("follow_through", {}).get("frame", imp)
+    fin = events.get("finish", {}).get("frame", fol)
+
+    pre_gap = max(int(fps * 0.12), 2)  # spacing of the pre-movement frames
+    bal_gap = max(int(fps * 0.35), 3)  # spacing of the balance-check frames
+    plan = [
+        (a - 2 * pre_gap, "pre-move 1"),
+        (a - pre_gap, "pre-move 2"),
+        (a, "pre-move 3 (last still)"),
+        (top, "TOP of backswing"),
+        (imp, "IMPACT"),
+        (fol, "FOLLOW-THROUGH peak"),
+        (fin + bal_gap, "balance +1"),
+        (fin + 2 * bal_gap, "balance +2"),
+    ]
+
+    panels = []
+    cap = cv2.VideoCapture(video_path)
+    for fr_idx, label in plan:
+        fr_idx = int(max(0, min(track.n_frames - 1, fr_idx)))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, fr_idx)
+        ok, frame = cap.read()
+        if not ok:
+            continue
+        draw_skeleton(frame, track.landmarks[fr_idx], track.width, track.height)
+        cv2.putText(
+            frame, f"{label} ({fr_idx})", (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2,
+        )
+        panels.append(cv2.resize(frame, (220, 391)))
+    if panels:
+        cv2.imwrite(out_path, cv2.hconcat(panels))
+    cap.release()
+    return out_path
+
+
 def overlay_video(track: PoseTrack, video_path: str, out_path: str):
     """Write a full copy of the video with the skeleton drawn on every frame."""
     import cv2
