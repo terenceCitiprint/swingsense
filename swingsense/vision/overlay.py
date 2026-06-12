@@ -119,10 +119,10 @@ def pillar_montage(track: PoseTrack, video_path: str, events: dict, out_path: st
 
     bal_gap = max(int(fps * 0.35), 3)  # spacing of the balance-check frames
     plan = [
-        (setup, "SETUP (still)"),
-        (top, "TOP of backswing"),
-        (imp, "IMPACT (club at ball)"),
-        (fol, "FOLLOW-THROUGH peak"),
+        (setup, "SETUP (club at ball)"),
+        (top, "PEAK backswing (farthest from ball)"),
+        (imp, "IMPACT (club back at ball)"),
+        (fol, "FOLLOW-THROUGH"),
         (fin + bal_gap, "balance +1"),
         (fin + 2 * bal_gap, "balance +2"),
     ]
